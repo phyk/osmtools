@@ -1,4 +1,6 @@
-fn get_bbbike_source(city_name: &String) {
+use std::collections::HashMap;
+
+fn get_bbbike_source(city_name: &String) -> (&str, &str) {
     let base_url = "https://download.bbbike.org/osm/bbbike";
     let suffix = ".osm.pbf";
     let cities = [
@@ -239,28 +241,57 @@ fn get_bbbike_source(city_name: &String) {
         "Zuerich",
     ];
     let lookup_map = HashMap::new();
-    
+    for city in cities {
+        match city {
+            "NewYorkCity" => lookup_map.insert(
+                city.to_lowercase(),
+                (
+                    city.to_lowercase() + suffix,
+                    format!("{base_url}/NewYork/NewYork{suffix}"),
+                ),
+            ),
+            _ => lookup_map.insert(
+                city.to_lowercase(),
+                (
+                    city.to_lowercase() + suffix,
+                    format!("{base_url}/{city}/{city}{suffix}"),
+                ),
+            ),
+        };
+    };
+    match lookup_map.get(&city_name.to_lowercase()) {
+        Some((filename, url)) => (filename, url),
+        None => Err(format!("{city_name} not available")),
+    }
 }
 
-    
+#[test]
+fn test_for_existing_city() {
+    let existing_city = "Zuerich";
+    assert_eq!(
+        get_bbbike_source(&existing_city.into()),
+        (
+            "zuerich.osm.pbf",
+            "https://download.bbbike.org/osm/bbbike/Zuerich/Zuerich.osm.pbf"
+        )
+    );
+}
 
-    available.sort()
+#[test]
+fn test_for_nonexistant_city() {
+    let nonexistant_city = "Hogwarts";
+    let result = get_bbbike_source(&nonexistant_city.into()).map_err();
+    assert_eq!(result, Error);
+}
 
-    # Create data sources
-    _sources = {
-        city.lower(): {"name": city + suffix, "url": f"{URL}/{city}/{city}{suffix}"}
-        for city in available
-        if city not in ["NewYorkCity"]
-    }
-    # Add New York City separately as there is also a state with the same name
-    # NewYork ==> NewYorkCity
-    _ny = "newyorkcity"
-    _ny_src = "NewYork"
-    _sources[_ny] = {"name": _ny + suffix, "url": f"{URL}/{_ny_src}/{_ny_src}{suffix}"}
-
-    __dict__ = _sources
-
-    def __getattr__(self, name):
-        return self.__dict__[name.lower()]
-
-fn get_bbbike_source()
+#[test]
+fn test_for_newyorkcity() {
+    let existing_city = "NewYorkCity";
+    assert_eq!(
+        get_bbbike_source(&existing_city.into()),
+        (
+            "newyorkcity.osm.pbf",
+            "https://download.bbbike.org/osm/bbbike/NewYork/NewYork.osm.pbf"
+        )
+    );
+}

@@ -315,11 +315,7 @@ pub struct Node {
 
 impl Node {
     pub fn new(osm_id: OsmNodeId, lat: Latitude, long: Longitude) -> Node {
-        Node {
-            osm_id,
-            lat,
-            long,
-        }
+        Node { osm_id, lat, long }
     }
 }
 
