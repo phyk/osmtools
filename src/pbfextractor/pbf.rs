@@ -14,11 +14,11 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
+*/
 use osmpbfreader::{OsmObj, OsmPbfReader, Way};
+use proj::Coord;
 
 use super::metrics::*;
-use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashSet};
 use std::fs::File;
@@ -34,27 +34,23 @@ pub type MetricIndices = BTreeMap<String, usize>;
 
 pub struct Loader<'a, Filter: EdgeFilter> {
     pbf_path: &'a str,
-    srtm_path: &'a str,
     edge_filter: Filter,
     tag_metrics: TagMetrics,
     node_metrics: NodeMetrics,
     cost_metrics: CostMetrics,
     pub internal_metrics: InternalMetrics,
     pub metrics_indices: MetricIndices,
-    grid: Rc<RefCell<Grid>>,
 }
 
 #[allow(clippy::too_many_arguments)]
 impl<'a, Filter: EdgeFilter> Loader<'a, Filter> {
     pub fn new(
         pbf_path: &'a str,
-        srtm_path: &'a str,
         edge_filter: Filter,
         tag_metrics: TagMetrics,
         node_metrics: NodeMetrics,
         cost_metrics: CostMetrics,
         internal_metrics: InternalMetrics,
-        grid: Rc<RefCell<Grid>>,
     ) -> Loader<'a, Filter> {
         let mut metrics_indices: MetricIndices = BTreeMap::new();
         let mut index = 0;
@@ -72,14 +68,12 @@ impl<'a, Filter: EdgeFilter> Loader<'a, Filter> {
         }
         Loader {
             pbf_path,
-            srtm_path,
             edge_filter,
             tag_metrics,
             node_metrics,
             cost_metrics,
             internal_metrics,
             metrics_indices,
-            grid,
         }
     }
 
@@ -124,10 +118,6 @@ impl<'a, Filter: EdgeFilter> Loader<'a, Filter> {
                 }
             })
             .collect();
-        {
-            let mut grid = (*self.grid).borrow_mut();
-            nodes.iter().for_each(|n| grid.add(n));
-        }
 
         println!("Collected {} nodes", nodes.len());
 
@@ -311,6 +301,24 @@ pub struct Node {
     pub osm_id: OsmNodeId,
     pub lat: Latitude,
     pub long: Longitude,
+}
+
+impl Coord<f64> for Node {
+    fn x(&self) -> f64 {
+        self.long
+    }
+
+    fn y(&self) -> f64 {
+        self.lat
+    }
+
+    fn from_xy(x: f64, y: f64) -> Self {
+        Self {
+            osm_id: 0,
+            long: x,
+            lat: y,
+        }
+    }
 }
 
 impl Node {

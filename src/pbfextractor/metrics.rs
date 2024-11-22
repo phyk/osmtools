@@ -18,11 +18,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 use super::pbf::{MetricIndices, Node};
 use super::units::*;
 
+use geo::{Distance, Euclidean};
+use geo_types::Point;
 use osmpbfreader::Tags;
-use rand::prelude::random;
+use proj::{Coord, Proj};
 use smartstring::{LazyCompact, SmartString};
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -52,7 +53,7 @@ pub trait TagMetric<T>: Metric {
 }
 
 pub trait NodeMetric<T>: Metric {
-    fn calc(&self, source: &Node, target: &Node) -> MetricResult<T>;
+    fn calc(&self, source: &Node, target: &Node, proj_to_m: &Proj) -> MetricResult<T>;
 }
 
 pub trait CostMetric<T>: Metric {
@@ -92,47 +93,16 @@ fn bounded_speed(tags: &Tags, driver_max: f64) -> MetricResult<KilometersPerHour
 }
 
 #[allow(dead_code)]
-pub struct CarSpeed;
-metric!(CarSpeed);
-impl TagMetric<KilometersPerHour> for CarSpeed {
-    fn calc(&self, tags: &Tags) -> MetricResult<KilometersPerHour> {
-        bounded_speed(tags, 120.0)
-    }
-}
+pub struct Distance_;
+metric!(Distance_);
 
-#[allow(dead_code)]
-pub struct TruckSpeed;
-metric!(TruckSpeed);
-impl TagMetric<KilometersPerHour> for TruckSpeed {
-    fn calc(&self, tags: &Tags) -> MetricResult<KilometersPerHour> {
-        bounded_speed(tags, 80.0)
-    }
-}
-
-#[allow(dead_code)]
-pub struct FastCarSpeed;
-metric!(FastCarSpeed);
-impl TagMetric<KilometersPerHour> for FastCarSpeed {
-    fn calc(&self, tags: &Tags) -> MetricResult<KilometersPerHour> {
-        bounded_speed(tags, 180.0)
-    }
-}
-
-#[allow(dead_code)]
-pub struct Distance;
-metric!(Distance);
-
-impl NodeMetric<Meters> for Distance {
-    fn calc(&self, source: &Node, target: &Node) -> MetricResult<Meters> {
-        const EARTH_RADIUS: Meters = Meters(6_371_007.2);
-        let theta1 = source.lat.to_radians();
-        let theta2 = target.lat.to_radians();
-        let delta_theta = (target.lat - source.lat).to_radians();
-        let delta_lambda = (target.long - source.long).to_radians();
-        let a = (delta_theta / 2.0).sin().powi(2)
-            + theta1.cos() * theta2.cos() * (delta_lambda / 2.0).sin().powi(2);
-        let c = 2.0 * a.sqrt().asin();
-        Ok(EARTH_RADIUS * c)
+impl NodeMetric<Meters> for Distance_ {
+    fn calc(&self, source: &Node, target: &Node, proj_to_m: &Proj) -> MetricResult<Meters> {
+        let source_point = Point::from_xy(source.x(), source.y());
+        let target_point = Point::from_xy(target.x(), target.y());
+        let source_proj = proj_to_m.convert(source_point).unwrap();
+        let target_proj = proj_to_m.convert(target_point).unwrap();
+        Ok(Meters(Euclidean::distance(source_proj, target_proj)))
     }
 }
 
@@ -204,8 +174,8 @@ impl<T> NodeMetric<f64> for T
 where
     T: NodeMetric<Meters>,
 {
-    fn calc(&self, source: &Node, target: &Node) -> MetricResult<f64> {
-        NodeMetric::<Meters>::calc(self, source, target).map(|c| c.0)
+    fn calc(&self, source: &Node, target: &Node, proj_to_m: &Proj) -> MetricResult<f64> {
+        NodeMetric::<Meters>::calc(self, source, target, proj_to_m).map(|c| c.0)
     }
 }
 
@@ -325,93 +295,6 @@ impl TagMetric<f64> for EdgeCount {
         Ok(1.0)
     }
 }
-#[derive(Debug)]
-pub struct Grid {
-    lat_min: f64,
-    lat_max: f64,
-    lng_min: f64,
-    lng_max: f64,
-    side_length: u32,
-}
-
-pub struct Coord {
-    pub x: u32,
-    pub y: u32,
-}
-
-impl Grid {
-    pub fn new_ptr() -> Rc<RefCell<Self>> {
-        Rc::new(RefCell::new(Self {
-            lat_min: 90.0,
-            lat_max: -90.0,
-            lng_min: 180.0,
-            lng_max: -180.0,
-            side_length: 20,
-        }))
-    }
-    pub fn add(&mut self, n: &Node) {
-        self.lat_min = n.lat.min(self.lat_min);
-        self.lat_max = n.lat.max(self.lat_max);
-        self.lng_min = n.long.min(self.lng_min);
-        self.lng_max = n.long.max(self.lng_max);
-    }
-    pub fn index(&self, n: &Node) -> Coord {
-        let x_len = (self.lng_max - self.lng_min) / Into::<f64>::into(self.side_length);
-        let x = (n.long - self.lng_min) / x_len;
-        let y_len = (self.lat_max - self.lat_min) / Into::<f64>::into(self.side_length);
-        let y = (n.lat - self.lat_min) / y_len;
-
-        Coord {
-            x: (x.ceil() - 1.0) as u32,
-            y: (y.ceil() - 1.0) as u32,
-        }
-    }
-}
-
-pub struct GridX(pub Rc<RefCell<Grid>>);
-metric!(GridX);
-impl NodeMetric<f64> for GridX {
-    fn calc(&self, a: &Node, _: &Node) -> MetricResult<f64> {
-        if self.0.borrow().index(a).x % 2 == 0 {
-            Ok(20.0)
-        } else {
-            Ok(1.0)
-        }
-    }
-}
-
-pub struct GridY(pub Rc<RefCell<Grid>>);
-metric!(GridY);
-impl NodeMetric<f64> for GridY {
-    fn calc(&self, a: &Node, _: &Node) -> MetricResult<f64> {
-        if self.0.borrow().index(a).y % 2 == 0 {
-            Ok(20.0)
-        } else {
-            Ok(1.0)
-        }
-    }
-}
-
-pub struct ChessBoard(pub Rc<RefCell<Grid>>);
-metric!(ChessBoard);
-impl NodeMetric<f64> for ChessBoard {
-    fn calc(&self, a: &Node, _: &Node) -> MetricResult<f64> {
-        let c = self.0.borrow().index(a);
-        if c.y % 2 == 0 && c.x % 2 == 0 {
-            Ok(20.0)
-        } else {
-            Ok(1.0)
-        }
-    }
-}
-
-pub struct RandomWeights;
-metric!(RandomWeights);
-impl TagMetric<f64> for RandomWeights {
-    fn calc(&self, _tags: &Tags) -> MetricResult<f64> {
-        Ok(random::<f64>() * 20.0)
-    }
-}
 
 pub trait EdgeFilter {
     fn is_invalid(&self, tags: &Tags) -> bool;
@@ -483,46 +366,4 @@ impl EdgeFilter for CarEdgeFilter {
                 | None
         )
     }
-}
-
-#[test]
-fn test_index() {
-    let g = Grid {
-        lng_min: 5.0,
-        lng_max: 20.0,
-        lat_min: 7.0,
-        lat_max: 30.0,
-        side_length: 20,
-    };
-
-    let c = g.index(&Node::new(1, 12.7, 7.3));
-
-    assert_eq!(3, c.x);
-    assert_eq!(4, c.y);
-
-    let c = g.index(&Node::new(1, 7.1, 5.1));
-
-    assert_eq!(0, c.x);
-    assert_eq!(0, c.y);
-
-    let c = g.index(&Node::new(1, 30.0, 20.00));
-
-    assert_eq!(19, c.x);
-    assert_eq!(19, c.y);
-}
-
-#[test]
-fn index_for_negative_coords() {
-    let g = Grid {
-        lng_min: -10.0,
-        lng_max: 10.0,
-        lat_min: -20.0,
-        lat_max: 20.0,
-        side_length: 20,
-    };
-
-    let c = g.index(&Node::new(1, 5.2, -3.3));
-
-    assert_eq!(6, c.x);
-    assert_eq!(12, c.y);
 }
