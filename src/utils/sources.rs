@@ -285,7 +285,7 @@ pub fn get_bbbike_source(city_name: &String) -> Result<(String, String), SourceN
         }
     }
     if found {
-        Ok((filename.into(), url.into()))
+        Ok((filename, url))
     } else {
         Err(SourceNotFoundError::new(city_name.into()))
     }

@@ -22,9 +22,11 @@ use super::metrics::*;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashSet};
 use std::fs::File;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread::spawn;
+use proj::Proj;
 
 pub type TagMetrics = Vec<Rc<dyn TagMetric<f64>>>;
 pub type NodeMetrics = Vec<Rc<dyn NodeMetric<f64>>>;
@@ -32,26 +34,28 @@ pub type CostMetrics = Vec<Rc<dyn CostMetric<f64>>>;
 pub type InternalMetrics = HashSet<String>;
 pub type MetricIndices = BTreeMap<String, usize>;
 
-pub struct Loader<'a, Filter: EdgeFilter> {
-    pbf_path: &'a str,
+pub struct Loader<Filter: EdgeFilter> {
+    pbf_path: PathBuf,
     edge_filter: Filter,
     tag_metrics: TagMetrics,
     node_metrics: NodeMetrics,
     cost_metrics: CostMetrics,
+    proj_to_m: Proj,
     pub internal_metrics: InternalMetrics,
     pub metrics_indices: MetricIndices,
 }
 
 #[allow(clippy::too_many_arguments)]
-impl<'a, Filter: EdgeFilter> Loader<'a, Filter> {
+impl<Filter: EdgeFilter> Loader<Filter> {
     pub fn new(
-        pbf_path: &'a str,
+        pbf_path: PathBuf,
         edge_filter: Filter,
         tag_metrics: TagMetrics,
         node_metrics: NodeMetrics,
         cost_metrics: CostMetrics,
         internal_metrics: InternalMetrics,
-    ) -> Loader<'a, Filter> {
+        crs_projection: &str,
+    ) -> Loader<Filter> {
         let mut metrics_indices: MetricIndices = BTreeMap::new();
         let mut index = 0;
         for t in &tag_metrics {
@@ -66,12 +70,14 @@ impl<'a, Filter: EdgeFilter> Loader<'a, Filter> {
             metrics_indices.insert(c.name(), index);
             index += 1;
         }
+        let proj_to_m =Proj::new_known_crs("EPSG:4326", crs_projection, None).expect("Error in creation of Projection");
         Loader {
             pbf_path,
             edge_filter,
             tag_metrics,
             node_metrics,
             cost_metrics,
+            proj_to_m,
             internal_metrics,
             metrics_indices,
         }
@@ -79,8 +85,8 @@ impl<'a, Filter: EdgeFilter> Loader<'a, Filter> {
 
     /// Loads the graph from a pbf file.
     pub fn load_graph(&self) -> (Vec<Node>, Vec<Edge>) {
-        println!("Extracting data out of: {}", self.pbf_path);
-        let fs = File::open(self.pbf_path).unwrap();
+        println!("Extracting data out of: {}", self.pbf_path.to_str().expect("Path could not be converted to string"));
+        let fs = File::open(self.pbf_path.as_path()).unwrap();
         let mut reader = OsmPbfReader::new(fs);
 
         let (id_sender, id_receiver) = channel();
@@ -123,7 +129,7 @@ impl<'a, Filter: EdgeFilter> Loader<'a, Filter> {
 
         println!("Calculating Metrics");
 
-        self.rename_node_ids_and_calculate_node_metrics(&mut nodes, &mut edges);
+        self.rename_node_ids_and_calculate_node_metrics(&mut nodes, &mut edges, &self.proj_to_m);
         self.calculate_cost_metrics(&mut edges);
 
         println!("Deleting duplicate and dominated edges");
@@ -225,7 +231,7 @@ impl<'a, Filter: EdgeFilter> Loader<'a, Filter> {
         }
     }
 
-    fn rename_node_ids_and_calculate_node_metrics(&self, nodes: &mut [Node], edges: &mut [Edge]) {
+    fn rename_node_ids_and_calculate_node_metrics(&self, nodes: &mut [Node], edges: &mut [Edge], proj_to_m: &Proj) {
         use std::collections::hash_map::HashMap;
 
         let map: HashMap<OsmNodeId, (usize, &Node)> =
@@ -237,7 +243,7 @@ impl<'a, Filter: EdgeFilter> Loader<'a, Filter> {
             e.dest = dest_id;
             for n in &self.node_metrics {
                 let index = self.metrics_indices[&n.name()];
-                let value = n.calc(source, dest).unwrap();
+                let value = n.calc(source, dest, proj_to_m).unwrap();
                 e.costs[index] = value;
             }
         }

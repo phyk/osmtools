@@ -1116,6 +1116,7 @@ dependencies = [
 name = "osmtools"
 version = "0.1.0"
 dependencies = [
+ "flate2",
  "geo",
  "geo-types",
  "osmpbfreader",
@@ -1123,7 +1124,6 @@ dependencies = [
  "rand",
  "reqwest",
  "smartstring",
- "tokio",
 ]
 
 [[package]]
