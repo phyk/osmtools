@@ -16,6 +16,12 @@ fn main() {
     let tag_metrics: TagMetrics = vec![];
     let cost_metrics: CostMetrics = vec![];
     let internal_metrics: InternalMetrics = vec![].into_iter().collect();
+
+    // TODO:
+    // add bounding box filter
+    // add multiple modes in one passthrough
+    // use largest connected component only
+    // calculate car speed max for all car edges
     let l = Loader::new(
         pbf_path,
         CarEdgeFilter,
@@ -26,6 +32,8 @@ fn main() {
         &String::from_str("EPSG:4839").expect("Should never fail")
     );
 
+    // change output format to a more efficient read/write format or a better structured format (or both)
+    // try out serde for writing the graph
     let output_file = File::create(outpath).unwrap();
     let graph = BufWriter::new(output_file);
     if false {
