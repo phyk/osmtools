@@ -19,7 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 use osmpbfreader::{OsmObj, OsmPbfReader, Way};
 use proj::Coord;
 
-use super::metrics::{CostMetric, EdgeFilter, NodeMetric, TagMetric};
+use super::metrics::{CostMetric, Distance_, EdgeFilter, NodeMetric, TagMetric};
 use proj::Proj;
 use std::cmp::Ordering;
 use std::collections::hash_map::HashMap;
@@ -53,12 +53,7 @@ pub struct Loader<Filter: EdgeFilter> {
     pbf_path: PathBuf,
     edge_filter: Filter,
     filter_geometry: Option<Polygon>,
-    tag_metrics: TagMetrics,
-    node_metrics: NodeMetrics,
-    cost_metrics: CostMetrics,
     proj_to_m: Proj,
-    pub internal_metrics: InternalMetrics,
-    pub metrics_indices: MetricIndices,
 }
 
 #[derive(Default)]
@@ -66,11 +61,7 @@ pub struct OsmLoaderBuilder<Filter: EdgeFilter> {
     pbf_path: Option<PathBuf>,
     edge_filter: Option<Filter>,
     filter_geometry: Option<Polygon>,
-    tag_metrics: Option<TagMetrics>,
-    node_metrics: Option<NodeMetrics>,
-    cost_metrics: Option<CostMetrics>,
     target_crs: Option<String>,
-    internal_metrics: Option<InternalMetrics>,
 }
 
 #[allow(dead_code)]
@@ -95,64 +86,18 @@ impl<Filter: EdgeFilter> OsmLoaderBuilder<Filter> {
         new.filter_geometry = Some(value.into());
         new
     }
-    pub fn tag_metrics<VALUE: Into<TagMetrics>>(&mut self, value: VALUE) -> &mut Self {
-        let new = self;
-        new.tag_metrics = Some(value.into());
-        new
-    }
-    pub fn node_metrics<VALUE: Into<NodeMetrics>>(&mut self, value: VALUE) -> &mut Self {
-        let new = self;
-        new.node_metrics = Some(value.into());
-        new
-    }
-    pub fn cost_metrics<VALUE: Into<CostMetrics>>(&mut self, value: VALUE) -> &mut Self {
-        let new = self;
-        new.cost_metrics = Some(value.into());
-        new
-    }
     pub fn target_crs<VALUE: Into<String>>(&mut self, value: VALUE) -> &mut Self {
         let new = self;
         new.target_crs = Some(value.into());
         new
     }
-    pub fn internal_metrics<VALUE: Into<InternalMetrics>>(&mut self, value: VALUE) -> &mut Self {
-        let new = self;
-        new.internal_metrics = Some(value.into());
-        new
-    }
     pub fn build(&self) -> Result<Loader<Filter>, LoaderBuildError> {
-        let mut metrics_indices: MetricIndices = BTreeMap::new();
-        let mut index = 0;
-        let mut tag_metrics: TagMetrics = vec![];
-        let mut node_metrics: NodeMetrics = vec![];
-        let mut cost_metrics: CostMetrics = vec![];
         let target_crs = self
             .target_crs
             .as_ref()
             .expect("Requires CRS to be set for any calculation");
         let proj_to_m = Proj::new_known_crs("EPSG:4326", &target_crs, None)
             .expect("Error in creation of Projection");
-        if self.tag_metrics.is_some() {
-            tag_metrics = Clone::clone(self.tag_metrics.as_ref().expect("Impossible"));
-            for t in &tag_metrics {
-                metrics_indices.insert(t.name(), index);
-                index += 1;
-            }
-        }
-        if self.node_metrics.is_some() {
-            node_metrics = Clone::clone(self.node_metrics.as_ref().expect("Impossible"));
-            for n in &node_metrics {
-                metrics_indices.insert(n.name(), index);
-                index += 1;
-            }
-        }
-        if self.cost_metrics.is_some() {
-            cost_metrics = Clone::clone(self.cost_metrics.as_ref().expect("Impossible"));
-            for c in &cost_metrics {
-                metrics_indices.insert(c.name(), index);
-                index += 1;
-            }
-        }
 
         Ok(Loader {
             pbf_path: match self.pbf_path {
@@ -171,16 +116,8 @@ impl<Filter: EdgeFilter> OsmLoaderBuilder<Filter> {
                     })
                 }
             },
-            internal_metrics: match self.internal_metrics {
-                Some(ref value) => Clone::clone(value),
-                None => vec![].into_iter().collect(),
-            },
             filter_geometry: Clone::clone(&self.filter_geometry),
-            tag_metrics: Clone::clone(&tag_metrics),
-            node_metrics: Clone::clone(&node_metrics),
-            cost_metrics: Clone::clone(&cost_metrics),
             proj_to_m: proj_to_m,
-            metrics_indices: metrics_indices,
         })
     }
 }
@@ -260,11 +197,11 @@ impl<Filter: EdgeFilter> Loader<Filter> {
             println!("Filtered {} edges", num_edges - edges_replace.len());
             edges = edges_replace;
         }
+        println!("Num Edges {}", edges.len());
 
         println!("Calculating Metrics");
 
-        self.rename_node_ids_and_calculate_node_metrics(&mut nodes, &mut edges, &self.proj_to_m);
-        self.calculate_cost_metrics(&mut edges);
+        self.rename_node_ids_and_calculate_node_metrics(&mut nodes, &mut edges);
 
         println!("Deleting duplicate and dominated edges");
 
@@ -273,12 +210,6 @@ impl<Filter: EdgeFilter> Loader<Filter> {
 
         println!("{} edges left", edges.len());
         (nodes, edges)
-    }
-    fn internal_metric_count(&self) -> usize {
-        self.node_metrics.len() + self.cost_metrics.len() + self.tag_metrics.len()
-    }
-    pub fn metric_count(&self) -> usize {
-        self.internal_metric_count() - self.internal_metrics.len()
     }
 
     fn collect_node_ids(
@@ -298,48 +229,25 @@ impl<Filter: EdgeFilter> Loader<Filter> {
         recv
     }
 
-    fn calculate_cost_metrics(&self, edges: &mut [Edge]) {
-        for e in edges {
-            for c in &self.cost_metrics {
-                let index = self.metrics_indices[&c.name()];
-                let value = c.calc(&e.costs, &self.metrics_indices).unwrap();
-                e.costs[index] = value;
-            }
-        }
-    }
-
     fn process_way(&self, w: &Way, id_sender: &Sender<osmpbfreader::NodeId>) -> Vec<Edge> {
         let mut edges = Vec::new();
         if self.edge_filter.is_invalid(&w.tags) {
             return edges;
         }
 
-        let tag_costs: Vec<(usize, f64)> = self
-            .tag_metrics
-            .iter()
-            .map(|t| (self.metrics_indices[&t.name()], t.calc(&w.tags).unwrap()))
-            .collect();
         let is_one_way = self.is_one_way(w);
         for (index, node) in w.nodes[0..(w.nodes.len() - 1)].iter().enumerate() {
             id_sender.send(*node).expect("could not send id to id set");
-            let mut edge = Edge::new(
+            let edge = Edge::new(
                 node.0 as NodeId,
                 w.nodes[index + 1].0 as NodeId,
-                self.internal_metric_count(),
             );
-            for (i, t) in &tag_costs {
-                edge.costs[*i] = *t;
-            }
             edges.push(edge);
             if !is_one_way {
-                let mut edge = Edge::new(
+                let edge = Edge::new(
                     w.nodes[index + 1].0 as NodeId,
-                    node.0 as NodeId,
-                    self.internal_metric_count(),
+                    node.0 as NodeId
                 );
-                for (i, t) in &tag_costs {
-                    edge.costs[*i] = *t;
-                }
                 edges.push(edge);
             }
         }
@@ -369,27 +277,20 @@ impl<Filter: EdgeFilter> Loader<Filter> {
         &self,
         nodes: &mut [Node],
         edges: &mut [Edge],
-        proj_to_m: &Proj,
     ) {
-        use std::collections::hash_map::HashMap;
-
         let map: HashMap<OsmNodeId, (usize, &Node)> =
             nodes.iter().enumerate().map(|n| (n.1.osm_id, n)).collect();
         for e in edges.iter_mut() {
             let (source_id, source) = map[&e.source];
             let (dest_id, dest) = map[&e.dest];
+            if source_id == 0 {
+                print!("{} {} {} - ", source.osm_id, source.lat, source.long)
+            }
             e.source = source_id;
             e.dest = dest_id;
-            for n in &self.node_metrics {
-                let index = self.metrics_indices[&n.name()];
-                let value = n.calc(source, dest, proj_to_m).unwrap();
-                e.costs[index] = value;
-            }
+            
+            e.dist = Distance_.calc(source, dest, &self.proj_to_m).expect("Cannot calculate distance");
         }
-    }
-
-    fn f64_to_whole_number(&self, x: f64) -> i64 {
-        x.trunc() as i64
     }
 
     fn delete_duplicate_edges(&self, edges: &mut Vec<Edge>) {
@@ -399,12 +300,7 @@ impl<Filter: EdgeFilter> Loader<Filter> {
                 result = e1.dest.cmp(&e2.dest);
             }
             if result == Ordering::Equal {
-                for (c1, c2) in e1.costs.iter().zip(e2.costs.iter()) {
-                    result = c1.partial_cmp(c2).unwrap_or(Ordering::Equal);
-                    if result != Ordering::Equal {
-                        break;
-                    }
-                }
+                result = e1.dist.partial_cmp(&e2.dist).expect("Failure in comparing values");
             }
             result
         });
@@ -419,11 +315,7 @@ impl<Filter: EdgeFilter> Loader<Filter> {
             if !(first.source == second.source && first.dest == second.dest) {
                 continue;
             }
-            if first
-                .costs
-                .iter()
-                .zip(second.costs.iter())
-                .all(|(f, s)| f <= s)
+            if first.dist <= second.dist
             {
                 indices.insert(i);
             }
@@ -477,29 +369,17 @@ impl Node {
 pub struct Edge {
     pub source: NodeId,
     pub dest: NodeId,
-    costs: Vec<f64>,
+    pub dist: f64,
 }
 
 impl Edge {
-    pub fn new(source: NodeId, dest: NodeId, cost_count: usize) -> Edge {
-        let costs = vec![0.0; cost_count];
+    pub fn new(source: NodeId, dest: NodeId) -> Edge {
+        let dist = -1.0;
         Edge {
             source,
             dest,
-            costs,
+            dist,
         }
-    }
-
-    pub fn costs(&self, indices: &MetricIndices, internal_only: &InternalMetrics) -> Vec<f64> {
-        let mut costs = Vec::new();
-        for (metric, index) in indices.iter() {
-            if internal_only.contains(metric) {
-                continue;
-            }
-            costs.push(self.costs[*index]);
-        }
-
-        costs
     }
 }
 
@@ -507,6 +387,6 @@ impl PartialEq for Edge {
     fn eq(&self, rhs: &Self) -> bool {
         self.source == rhs.source
             && self.dest == rhs.dest
-            && self.costs.iter().zip(rhs.costs.iter()).all(|(a, b)| a == b)
+            && self.dist == rhs.dist
     }
 }
