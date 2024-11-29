@@ -14,6 +14,7 @@ fn main() {
     // TODO:
     // use largest connected component only
     // calculate car speed max for all car edges
+    // add BikeEdgeFilter and WalkingEdgeFilter
     let osm_loader: Loader<CarEdgeFilter> = OsmLoaderBuilder::default()
         .pbf_path(pbf_path)
         .edge_filter(CarEdgeFilter)
