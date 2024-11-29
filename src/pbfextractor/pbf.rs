@@ -1,3 +1,4 @@
+use geo::{Contains, Polygon};
 /*
 Pbfextractor creates graph files for the cycle-routing projects from pbf and srtm data
 Copyright (C) 2018  Florian Barth
@@ -18,25 +19,40 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 use osmpbfreader::{OsmObj, OsmPbfReader, Way};
 use proj::Coord;
 
-use super::metrics::*;
+use super::metrics::{CostMetric, EdgeFilter, NodeMetric, TagMetric};
+use proj::Proj;
 use std::cmp::Ordering;
+use std::collections::hash_map::HashMap;
 use std::collections::{BTreeMap, HashSet};
+use std::error::Error;
+use std::fmt::Display;
 use std::fs::File;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread::spawn;
-use proj::Proj;
 
 pub type TagMetrics = Vec<Rc<dyn TagMetric<f64>>>;
 pub type NodeMetrics = Vec<Rc<dyn NodeMetric<f64>>>;
 pub type CostMetrics = Vec<Rc<dyn CostMetric<f64>>>;
 pub type InternalMetrics = HashSet<String>;
 pub type MetricIndices = BTreeMap<String, usize>;
+#[derive(Debug)]
+pub struct LoaderBuildError {
+    source: String,
+}
+
+impl Error for LoaderBuildError {}
+impl Display for LoaderBuildError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Missing required field {}", self.source)
+    }
+}
 
 pub struct Loader<Filter: EdgeFilter> {
     pbf_path: PathBuf,
     edge_filter: Filter,
+    filter_geometry: Option<Polygon>,
     tag_metrics: TagMetrics,
     node_metrics: NodeMetrics,
     cost_metrics: CostMetrics,
@@ -45,47 +61,140 @@ pub struct Loader<Filter: EdgeFilter> {
     pub metrics_indices: MetricIndices,
 }
 
-#[allow(clippy::too_many_arguments)]
-impl<Filter: EdgeFilter> Loader<Filter> {
-    pub fn new(
-        pbf_path: PathBuf,
-        edge_filter: Filter,
-        tag_metrics: TagMetrics,
-        node_metrics: NodeMetrics,
-        cost_metrics: CostMetrics,
-        internal_metrics: InternalMetrics,
-        crs_projection: &str,
-    ) -> Loader<Filter> {
+#[derive(Default)]
+pub struct OsmLoaderBuilder<Filter: EdgeFilter> {
+    pbf_path: Option<PathBuf>,
+    edge_filter: Option<Filter>,
+    filter_geometry: Option<Polygon>,
+    tag_metrics: Option<TagMetrics>,
+    node_metrics: Option<NodeMetrics>,
+    cost_metrics: Option<CostMetrics>,
+    target_crs: Option<String>,
+    internal_metrics: Option<InternalMetrics>,
+}
+
+#[allow(dead_code)]
+impl<Filter: EdgeFilter> OsmLoaderBuilder<Filter> {
+    pub fn pbf_path<VALUE: Into<PathBuf>>(&mut self, value: VALUE) -> &mut Self {
+        let new = self;
+        new.pbf_path = Some(value.into());
+        new
+    }
+    pub fn pbf_path_from_str<VALUE: Into<String>>(&mut self, value: VALUE) -> &mut Self {
+        let new = self;
+        new.pbf_path = Some(Path::new(&value.into()).to_path_buf());
+        new
+    }
+    pub fn edge_filter<VALUE: Into<Filter>>(&mut self, value: VALUE) -> &mut Self {
+        let new = self;
+        new.edge_filter = Some(value.into());
+        new
+    }
+    pub fn filter_geometry<VALUE: Into<Polygon>>(&mut self, value: VALUE) -> &mut Self {
+        let new = self;
+        new.filter_geometry = Some(value.into());
+        new
+    }
+    pub fn tag_metrics<VALUE: Into<TagMetrics>>(&mut self, value: VALUE) -> &mut Self {
+        let new = self;
+        new.tag_metrics = Some(value.into());
+        new
+    }
+    pub fn node_metrics<VALUE: Into<NodeMetrics>>(&mut self, value: VALUE) -> &mut Self {
+        let new = self;
+        new.node_metrics = Some(value.into());
+        new
+    }
+    pub fn cost_metrics<VALUE: Into<CostMetrics>>(&mut self, value: VALUE) -> &mut Self {
+        let new = self;
+        new.cost_metrics = Some(value.into());
+        new
+    }
+    pub fn target_crs<VALUE: Into<String>>(&mut self, value: VALUE) -> &mut Self {
+        let new = self;
+        new.target_crs = Some(value.into());
+        new
+    }
+    pub fn internal_metrics<VALUE: Into<InternalMetrics>>(&mut self, value: VALUE) -> &mut Self {
+        let new = self;
+        new.internal_metrics = Some(value.into());
+        new
+    }
+    pub fn build(&self) -> Result<Loader<Filter>, LoaderBuildError> {
         let mut metrics_indices: MetricIndices = BTreeMap::new();
         let mut index = 0;
-        for t in &tag_metrics {
-            metrics_indices.insert(t.name(), index);
-            index += 1;
+        let mut tag_metrics: TagMetrics = vec![];
+        let mut node_metrics: NodeMetrics = vec![];
+        let mut cost_metrics: CostMetrics = vec![];
+        let target_crs = self
+            .target_crs
+            .as_ref()
+            .expect("Requires CRS to be set for any calculation");
+        let proj_to_m = Proj::new_known_crs("EPSG:4326", &target_crs, None)
+            .expect("Error in creation of Projection");
+        if self.tag_metrics.is_some() {
+            tag_metrics = Clone::clone(self.tag_metrics.as_ref().expect("Impossible"));
+            for t in &tag_metrics {
+                metrics_indices.insert(t.name(), index);
+                index += 1;
+            }
         }
-        for n in &node_metrics {
-            metrics_indices.insert(n.name(), index);
-            index += 1;
+        if self.node_metrics.is_some() {
+            node_metrics = Clone::clone(self.node_metrics.as_ref().expect("Impossible"));
+            for n in &node_metrics {
+                metrics_indices.insert(n.name(), index);
+                index += 1;
+            }
         }
-        for c in &cost_metrics {
-            metrics_indices.insert(c.name(), index);
-            index += 1;
+        if self.cost_metrics.is_some() {
+            cost_metrics = Clone::clone(self.cost_metrics.as_ref().expect("Impossible"));
+            for c in &cost_metrics {
+                metrics_indices.insert(c.name(), index);
+                index += 1;
+            }
         }
-        let proj_to_m =Proj::new_known_crs("EPSG:4326", crs_projection, None).expect("Error in creation of Projection");
-        Loader {
-            pbf_path,
-            edge_filter,
-            tag_metrics,
-            node_metrics,
-            cost_metrics,
-            proj_to_m,
-            internal_metrics,
-            metrics_indices,
-        }
-    }
 
+        Ok(Loader {
+            pbf_path: match self.pbf_path {
+                Some(ref value) => Clone::clone(value),
+                None => {
+                    return Err(LoaderBuildError {
+                        source: "pbf_path".into(),
+                    })
+                }
+            },
+            edge_filter: match self.edge_filter {
+                Some(ref value) => Clone::clone(value),
+                None => {
+                    return Err(LoaderBuildError {
+                        source: "edge_filter".into(),
+                    })
+                }
+            },
+            internal_metrics: match self.internal_metrics {
+                Some(ref value) => Clone::clone(value),
+                None => vec![].into_iter().collect(),
+            },
+            filter_geometry: Clone::clone(&self.filter_geometry),
+            tag_metrics: Clone::clone(&tag_metrics),
+            node_metrics: Clone::clone(&node_metrics),
+            cost_metrics: Clone::clone(&cost_metrics),
+            proj_to_m: proj_to_m,
+            metrics_indices: metrics_indices,
+        })
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+impl<Filter: EdgeFilter> Loader<Filter> {
     /// Loads the graph from a pbf file.
     pub fn load_graph(&self) -> (Vec<Node>, Vec<Edge>) {
-        println!("Extracting data out of: {}", self.pbf_path.to_str().expect("Path could not be converted to string"));
+        println!(
+            "Extracting data out of: {}",
+            self.pbf_path
+                .to_str()
+                .expect("Path could not be converted to string")
+        );
         let fs = File::open(self.pbf_path.as_path()).unwrap();
         let mut reader = OsmPbfReader::new(fs);
 
@@ -107,6 +216,7 @@ impl<Filter: EdgeFilter> Loader<Filter> {
         drop(id_sender);
 
         let id_set = set_receiver.recv().expect("Did not get node ids");
+        let mut skipped_nodes = 0;
 
         let mut nodes: Vec<Node> = reader
             .par_iter()
@@ -115,7 +225,17 @@ impl<Filter: EdgeFilter> Loader<Filter> {
                     if id_set.contains(&n.id) {
                         let lat = f64::from(n.decimicro_lat) / 10_000_000.0;
                         let lng = f64::from(n.decimicro_lon) / 10_000_000.0;
-                        Some(Node::new(n.id.0 as usize, lat, lng))
+                        let point = geo::Point::new(lng, lat);
+                        if self
+                            .filter_geometry
+                            .as_ref()
+                            .is_some_and(|f| !f.contains(&point))
+                        {
+                            skipped_nodes += 1;
+                            None
+                        } else {
+                            Some(Node::new(n.id.0 as usize, lat, lng))
+                        }
                     } else {
                         None
                     }
@@ -126,6 +246,20 @@ impl<Filter: EdgeFilter> Loader<Filter> {
             .collect();
 
         println!("Collected {} nodes", nodes.len());
+        if self.filter_geometry.is_some() {
+            println!("Filtered {} nodes", skipped_nodes);
+            let map: HashMap<OsmNodeId, (usize, &Node)> =
+                nodes.iter().enumerate().map(|n| (n.1.osm_id, n)).collect();
+            let mut edges_replace: Vec<Edge> = vec![];
+            let num_edges = edges.len();
+            for edge in edges {
+                if map.contains_key(&edge.source) & map.contains_key(&edge.dest) {
+                    edges_replace.push(edge);
+                }
+            }
+            println!("Filtered {} edges", num_edges - edges_replace.len());
+            edges = edges_replace;
+        }
 
         println!("Calculating Metrics");
 
@@ -231,7 +365,12 @@ impl<Filter: EdgeFilter> Loader<Filter> {
         }
     }
 
-    fn rename_node_ids_and_calculate_node_metrics(&self, nodes: &mut [Node], edges: &mut [Edge], proj_to_m: &Proj) {
+    fn rename_node_ids_and_calculate_node_metrics(
+        &self,
+        nodes: &mut [Node],
+        edges: &mut [Edge],
+        proj_to_m: &Proj,
+    ) {
         use std::collections::hash_map::HashMap;
 
         let map: HashMap<OsmNodeId, (usize, &Node)> =
@@ -303,6 +442,7 @@ pub type OsmNodeId = usize;
 pub type Latitude = f64;
 pub type Longitude = f64;
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Node {
     pub osm_id: OsmNodeId,
     pub lat: Latitude,
@@ -333,6 +473,7 @@ impl Node {
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Edge {
     pub source: NodeId,
     pub dest: NodeId,

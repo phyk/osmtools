@@ -1,36 +1,30 @@
+use geo::polygon;
+use osmtools::pbfextractor::metrics::{CarEdgeFilter, Distance_, EdgeFilter};
+use osmtools::pbfextractor::pbf::{Loader, NodeMetrics, OsmLoaderBuilder};
 use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::io::{self, BufWriter, Write};
 use std::rc::Rc;
-use std::str::FromStr;
 use std::time::SystemTime;
-use osmtools::pbfextractor::metrics::{CarEdgeFilter, EdgeFilter, Distance_};
-use osmtools::pbfextractor::pbf::{Loader, NodeMetrics, TagMetrics, CostMetrics, InternalMetrics};
-
 
 fn main() {
     let pbf_path =
         osmtools::download::download(&"Koeln".into(), &"data".into()).expect("Not downloaded");
-    let outpath = "data/test";
+    let outpath = "data/edges.csv";
     let dist = Rc::new(Distance_);
     let node_metrics: NodeMetrics = vec![dist];
-    let tag_metrics: TagMetrics = vec![];
-    let cost_metrics: CostMetrics = vec![];
-    let internal_metrics: InternalMetrics = vec![].into_iter().collect();
+    let bounding_box = polygon![(x: 6.629850485818913, y: 50.7405089663172), (x: 6.629850485818913, y: 51.1749294931249), (x: 7.304073531148258, y: 51.1749294931249), (x: 7.304073531148258, y: 50.7405089663172)];
 
     // TODO:
-    // add bounding box filter
-    // add multiple modes in one passthrough
     // use largest connected component only
     // calculate car speed max for all car edges
-    let l = Loader::new(
-        pbf_path,
-        CarEdgeFilter,
-        tag_metrics,
-        node_metrics,
-        cost_metrics,
-        internal_metrics,
-        &String::from_str("EPSG:4839").expect("Should never fail")
-    );
+    let osm_loader: Loader<CarEdgeFilter> = OsmLoaderBuilder::default()
+        .pbf_path(pbf_path)
+        .edge_filter(CarEdgeFilter)
+        .node_metrics(node_metrics)
+        .target_crs("EPSG:4839")
+        .filter_geometry(bounding_box)
+        .build()
+        .expect("What is missing?");
 
     // change output format to a more efficient read/write format or a better structured format (or both)
     // try out serde for writing the graph
@@ -38,46 +32,20 @@ fn main() {
     let graph = BufWriter::new(output_file);
     if false {
         let graph = flate2::write::GzEncoder::new(graph, flate2::Compression::best());
-        write_graph(&l, graph);
+        write_graph(&osm_loader, graph).expect("Error in writing");
     } else {
-        write_graph(&l, graph);
+        write_graph(&osm_loader, graph).expect("Error in writing");
     }
 }
 
-fn write_graph<T: EdgeFilter, W: Write>(l: &Loader<T>, mut graph: W) {
+fn write_graph<T: EdgeFilter, W: Write>(l: &Loader<T>, graph: W) -> Result<(), io::Error> {
     let (nodes, edges) = l.load_graph();
+    let mut wtr = csv::Writer::from_writer(graph);
 
-    writeln!(&mut graph, "# Build by: pbfextractor").unwrap();
-    writeln!(&mut graph, "# Build on: {:?}", SystemTime::now()).unwrap();
-    write!(&mut graph, "# metrics: ").unwrap();
-
-    for metric in l.metrics_indices.keys() {
-        if l.internal_metrics.contains(metric) {
-            continue;
-        }
-        write!(&mut graph, "{}, ", metric).unwrap();
+    for edge in edges {
+        print!("{}", edge.source);
+        wtr.serialize(edge)?;
     }
-
-    write!(&mut graph, "\n\n").unwrap();
-
-    writeln!(&mut graph, "{}", l.metric_count()).unwrap();
-    writeln!(&mut graph, "{}", nodes.len()).unwrap();
-    writeln!(&mut graph, "{}", edges.len()).unwrap();
-
-    for (i, node) in nodes.iter().enumerate() {
-        writeln!(
-            &mut graph,
-            "{} {} {} {} 0",
-            i, node.osm_id, node.lat, node.long,
-        )
-        .unwrap();
-    }
-    for edge in &edges {
-        write!(&mut graph, "{} {} ", edge.source, edge.dest).unwrap();
-        for cost in &edge.costs(&l.metrics_indices, &l.internal_metrics) {
-            write!(&mut graph, "{} ", cost.round()).unwrap();
-        }
-        writeln!(&mut graph, "-1 -1").unwrap();
-    }
-    graph.flush().unwrap();
+    wtr.flush()?;
+    Ok(())
 }

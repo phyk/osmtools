@@ -296,11 +296,12 @@ impl TagMetric<f64> for EdgeCount {
     }
 }
 
-pub trait EdgeFilter {
+pub trait EdgeFilter: Clone {
     fn is_invalid(&self, tags: &Tags) -> bool;
 }
 
 #[allow(dead_code)]
+#[derive(Clone)]
 pub struct BicycleEdgeFilter;
 
 impl EdgeFilter for BicycleEdgeFilter {
@@ -343,6 +344,7 @@ impl EdgeFilter for BicycleEdgeFilter {
     }
 }
 #[allow(dead_code)]
+#[derive(Clone, Default)]
 pub struct CarEdgeFilter;
 
 impl EdgeFilter for CarEdgeFilter {
