@@ -15,7 +15,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-use super::pbf::{MetricIndices, Node};
+use super::pbf::{Node, MetricIndices};
 use super::units::*;
 
 use geo::{Distance, Euclidean};
@@ -301,7 +301,7 @@ pub trait EdgeFilter: Clone {
 }
 
 #[allow(dead_code)]
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct BicycleEdgeFilter;
 
 impl EdgeFilter for BicycleEdgeFilter {
@@ -328,18 +328,59 @@ impl EdgeFilter for BicycleEdgeFilter {
         matches!(
             street_type,
             Some("motorway")
-                | Some("motorway_link")
-                | Some("trunk")
-                | Some("trunk_link")
-                | Some("proposed")
-                | Some("steps")
-                | Some("elevator")
-                | Some("corridor")
-                | Some("raceway")
-                | Some("rest_area")
-                | Some("construction")
-                | Some("service")
-                | None
+            | Some("steps")
+            | Some("corridor")
+            | Some("elevator")
+            | Some("escalator")
+            | Some("motor")
+            | Some("proposed")
+            | Some("abandoned")
+            | Some("platform")
+            | Some("raceway")
+            | Some("motorway_link")
+            | Some("trunk")
+            | Some("trunk_link")
+            | Some("rest_area")
+            | Some("construction")
+            | Some("service")
+            | None
+        )
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Default)]
+pub struct WalkingEdgeFilter;
+
+impl EdgeFilter for WalkingEdgeFilter {
+    fn is_invalid(&self, tags: &Tags) -> bool {
+        let walking_tag = tags.get("walking");
+        if walking_tag == Some(&SmartString::<LazyCompact>::from("no")) {
+            return true;
+        }
+
+        let street_type = tags.get("highway").map(smartstring::alias::String::as_ref);
+        let side_walk: Option<&str> = tags.get("sidewalk").map(smartstring::alias::String::as_ref);
+        let has_side_walk: bool = match side_walk {
+            Some(s) => s != "no",
+            None => false,
+        };
+        if has_side_walk {
+            return false;
+        }
+        matches!(
+            street_type,
+            Some("motorway")
+            | Some("motorway_link")
+            | Some("motor")
+            | Some("proposed")
+            | Some("construction")
+            | Some("abandoned")
+            | Some("platform")
+            | Some("raceway")
+            | Some("trunk")
+            | Some("trunk_link")
+            | None
         )
     }
 }
@@ -353,17 +394,21 @@ impl EdgeFilter for CarEdgeFilter {
         matches!(
             street_type,
             Some("footway")
-                | Some("bridleway")
-                | Some("steps")
-                | Some("path")
-                | Some("cycleway")
-                | Some("track")
-                | Some("proposed")
-                | Some("construction")
-                | Some("pedestrian")
+            | Some("cycleway")
+            | Some("path")
+            | Some("pedestrian")
+            | Some("steps")
+            | Some("track")
+            | Some("corridor")
+            | Some("elevator")
+            | Some("escalator")
+            | Some("proposed")
+            | Some("construction")
+            | Some("bridleway")
+            | Some("abandoned")
+            | Some("platform")
+            | Some("raceway")
                 | Some("rest_area")
-                | Some("elevator")
-                | Some("raceway")
                 | Some("service")
                 | None
         )

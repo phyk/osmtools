@@ -19,7 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 use osmpbfreader::{OsmObj, OsmPbfReader, Way};
 use proj::Coord;
 
-use super::metrics::{CostMetric, Distance_, EdgeFilter, NodeMetric, TagMetric};
+use super::metrics::{Distance_, EdgeFilter, NodeMetric};
 use proj::Proj;
 use std::cmp::Ordering;
 use std::collections::hash_map::HashMap;
@@ -28,14 +28,9 @@ use std::error::Error;
 use std::fmt::Display;
 use std::fs::File;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread::spawn;
 
-pub type TagMetrics = Vec<Rc<dyn TagMetric<f64>>>;
-pub type NodeMetrics = Vec<Rc<dyn NodeMetric<f64>>>;
-pub type CostMetrics = Vec<Rc<dyn CostMetric<f64>>>;
-pub type InternalMetrics = HashSet<String>;
 pub type MetricIndices = BTreeMap<String, usize>;
 #[derive(Debug)]
 pub struct LoaderBuildError {
@@ -238,16 +233,10 @@ impl<Filter: EdgeFilter> Loader<Filter> {
         let is_one_way = self.is_one_way(w);
         for (index, node) in w.nodes[0..(w.nodes.len() - 1)].iter().enumerate() {
             id_sender.send(*node).expect("could not send id to id set");
-            let edge = Edge::new(
-                node.0 as NodeId,
-                w.nodes[index + 1].0 as NodeId,
-            );
+            let edge = Edge::new(node.0 as NodeId, w.nodes[index + 1].0 as NodeId);
             edges.push(edge);
             if !is_one_way {
-                let edge = Edge::new(
-                    w.nodes[index + 1].0 as NodeId,
-                    node.0 as NodeId
-                );
+                let edge = Edge::new(w.nodes[index + 1].0 as NodeId, node.0 as NodeId);
                 edges.push(edge);
             }
         }
@@ -273,23 +262,18 @@ impl<Filter: EdgeFilter> Loader<Filter> {
         }
     }
 
-    fn rename_node_ids_and_calculate_node_metrics(
-        &self,
-        nodes: &mut [Node],
-        edges: &mut [Edge],
-    ) {
+    fn rename_node_ids_and_calculate_node_metrics(&self, nodes: &mut [Node], edges: &mut [Edge]) {
         let map: HashMap<OsmNodeId, (usize, &Node)> =
             nodes.iter().enumerate().map(|n| (n.1.osm_id, n)).collect();
         for e in edges.iter_mut() {
             let (source_id, source) = map[&e.source];
             let (dest_id, dest) = map[&e.dest];
-            if source_id == 0 {
-                print!("{} {} {} - ", source.osm_id, source.lat, source.long)
-            }
             e.source = source_id;
             e.dest = dest_id;
-            
-            e.dist = Distance_.calc(source, dest, &self.proj_to_m).expect("Cannot calculate distance");
+
+            e.dist = Distance_
+                .calc(source, dest, &self.proj_to_m)
+                .expect("Cannot calculate distance");
         }
     }
 
@@ -300,7 +284,10 @@ impl<Filter: EdgeFilter> Loader<Filter> {
                 result = e1.dest.cmp(&e2.dest);
             }
             if result == Ordering::Equal {
-                result = e1.dist.partial_cmp(&e2.dist).expect("Failure in comparing values");
+                result = e1
+                    .dist
+                    .partial_cmp(&e2.dist)
+                    .expect("Failure in comparing values");
             }
             result
         });
@@ -315,8 +302,7 @@ impl<Filter: EdgeFilter> Loader<Filter> {
             if !(first.source == second.source && first.dest == second.dest) {
                 continue;
             }
-            if first.dist <= second.dist
-            {
+            if first.dist <= second.dist {
                 indices.insert(i);
             }
         }
@@ -375,18 +361,12 @@ pub struct Edge {
 impl Edge {
     pub fn new(source: NodeId, dest: NodeId) -> Edge {
         let dist = -1.0;
-        Edge {
-            source,
-            dest,
-            dist,
-        }
+        Edge { source, dest, dist }
     }
 }
 
 impl PartialEq for Edge {
     fn eq(&self, rhs: &Self) -> bool {
-        self.source == rhs.source
-            && self.dest == rhs.dest
-            && self.dist == rhs.dist
+        self.source == rhs.source && self.dest == rhs.dest && self.dist == rhs.dist
     }
 }

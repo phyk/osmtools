@@ -9,6 +9,7 @@ flate2 = "1.0.35"
 geo = "0.29.2"
 geo-types = "0.7.14"
 osmpbfreader = "0.16.1"
+petgraph = "0.6.5"
 proj = "0.27.2"
 rand = "0.8.5"
 reqwest = { version = "0.12.9", features = ["blocking"]}

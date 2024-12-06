@@ -1,34 +1,38 @@
 use geo::polygon;
-use osmtools::pbfextractor::metrics::{CarEdgeFilter, EdgeFilter};
+use osmtools::pbfextractor::metrics::{BicycleEdgeFilter, WalkingEdgeFilter, CarEdgeFilter, EdgeFilter};
 use osmtools::pbfextractor::pbf::{Loader, OsmLoaderBuilder};
 use std::fs::File;
 use std::io::{self, BufWriter};
 
 fn main() {
-    let pbf_path =
-        osmtools::download::download(&"Koeln".into(), &"data".into()).expect("Not downloaded");
-    let outpath_edges = "data/edges.csv";
-    let outpath_nodes = "data/nodes.csv";
+    // let pbf_path =
+    //     osmtools::download::download(&"Koeln".into(), &"data".into()).expect("Not downloaded");
+    let pbf_path_str = "data/koeln.osm.pbf";
+    let outpath_edges = "data/edges_walk.csv";
+    let outpath_nodes = "data/nodes_walk.csv";
     let bounding_box = polygon![(x: 6.629850485818913, y: 50.7405089663172), (x: 6.629850485818913, y: 51.1749294931249), (x: 7.304073531148258, y: 51.1749294931249), (x: 7.304073531148258, y: 50.7405089663172)];
 
     // TODO:
     // use largest connected component only
     // calculate car speed max for all car edges
-    // add BikeEdgeFilter and WalkingEdgeFilter
-    let osm_loader: Loader<CarEdgeFilter> = OsmLoaderBuilder::default()
-        .pbf_path(pbf_path)
-        .edge_filter(CarEdgeFilter)
+    let osm_loader: Loader<WalkingEdgeFilter> = OsmLoaderBuilder::default()
+        .pbf_path_from_str(pbf_path_str)
+        .edge_filter(WalkingEdgeFilter)
         .target_crs("EPSG:4839")
         .filter_geometry(bounding_box)
         .build()
         .expect("What is missing?");
 
-        // let graph = flate2::write::GzEncoder::new(graph, flate2::Compression::best());
+    // let graph = flate2::write::GzEncoder::new(graph, flate2::Compression::best());
 
     write_graph(&osm_loader, outpath_edges, outpath_nodes).expect("Error in writing");
 }
 
-fn write_graph<T: EdgeFilter>(l: &Loader<T>, outpath_edges: &str, outpath_nodes: &str) -> Result<(), io::Error> {
+fn write_graph<T: EdgeFilter>(
+    l: &Loader<T>,
+    outpath_edges: &str,
+    outpath_nodes: &str,
+) -> Result<(), io::Error> {
     let output_file_edges = File::create(outpath_edges).unwrap();
     let output_file_nodes = File::create(outpath_nodes).unwrap();
     let edge_writer = BufWriter::new(output_file_edges);
