@@ -1,11 +1,10 @@
-use geo::polygon;
+use geo::{LineString, Polygon};
 use h3o::{LatLng, Resolution};
 use osmtools::pbfextractor::metrics::{
     BicycleEdgeFilter, CarEdgeFilter, Distance_, EdgeFilter, NodeMetric, WalkingEdgeFilter,
 };
 use osmtools::pbfextractor::pbf::{Loader, OsmLoaderBuilder};
 use osmtools::pbfextractor::units::Meters;
-use serde::de::value;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
@@ -17,7 +16,7 @@ fn check_pbf_archives(
     archive_path: &str,
     download: bool,
 ) -> Result<PathBuf, Error> {
-    let mut pbf_path = PathBuf::new();
+    let pbf_path;
     if download {
         pbf_path = osmtools::download::download(&city_name.into(), &archive_path.into())
             .expect("Error in Download");
@@ -89,11 +88,12 @@ fn get_outpath(outpath: &str, city_name: &str, network_type: &str) -> String {
 
 fn load_osm_walking(
     city_name: &str,
-    bounding_box: geo_types::geometry::Polygon,
+    geometry_vec: Vec<(f64, f64)>,
     archive_path: &str,
     outpath: &str,
     download: bool,
 ) {
+    let bounding_box = Polygon::new(LineString::from(geometry_vec), vec![]);
     let pbf_path = check_pbf_archives(city_name, archive_path, download)
         .expect("Download failed or Path not existing");
     let osm_loader: Loader<WalkingEdgeFilter> = OsmLoaderBuilder::default()
@@ -118,11 +118,12 @@ fn load_osm_walking(
 }
 fn load_osm_cycling(
     city_name: &str,
-    bounding_box: geo_types::geometry::Polygon,
+    geometry_vec: Vec<(f64, f64)>,
     archive_path: &str,
     outpath: &str,
     download: bool,
 ) {
+    let bounding_box = Polygon::new(LineString::from(geometry_vec), vec![]);
     let pbf_path = check_pbf_archives(city_name, archive_path, download)
         .expect("Download failed or Path not existing");
     let osm_loader: Loader<BicycleEdgeFilter> = OsmLoaderBuilder::default()
@@ -146,11 +147,12 @@ fn load_osm_cycling(
 }
 fn load_osm_driving(
     city_name: &str,
-    bounding_box: geo_types::geometry::Polygon,
+    geometry_vec: Vec<(f64, f64)>,
     archive_path: &str,
     outpath: &str,
     download: bool,
 ) {
+    let bounding_box = Polygon::new(LineString::from(geometry_vec), vec![]);
     let pbf_path = check_pbf_archives(city_name, archive_path, download)
         .expect("Download failed or Path not existing");
     let osm_loader: Loader<CarEdgeFilter> = OsmLoaderBuilder::default()
@@ -174,7 +176,12 @@ fn load_osm_driving(
 }
 
 fn main() {
-    let bounding_box = polygon![(x: 6.629850485818913, y: 50.7405089663172), (x: 6.629850485818913, y: 51.1749294931249), (x: 7.304073531148258, y: 51.1749294931249), (x: 7.304073531148258, y: 50.7405089663172)];
+    let bounding_box = vec![
+        (6.629850485818913, 50.7405089663172),
+        (6.629850485818913, 51.1749294931249),
+        (7.304073531148258, 51.1749294931249),
+        (7.304073531148258, 50.7405089663172),
+    ];
 
     load_osm_walking("Koeln", bounding_box, "data", "data", true);
     // load_osm_cycling("Koeln", bounding_box, "data", "data", false);
