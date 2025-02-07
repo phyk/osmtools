@@ -48,7 +48,7 @@ pub struct Loader<Filter: EdgeFilter> {
     pbf_path: PathBuf,
     edge_filter: Filter,
     filter_geometry: Option<Polygon>,
-    proj_to_m: Proj,
+    pub proj_to_m: Proj,
 }
 
 #[derive(Default)]
@@ -320,7 +320,7 @@ pub type OsmNodeId = usize;
 pub type Latitude = f64;
 pub type Longitude = f64;
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy)]
 pub struct Node {
     pub osm_id: OsmNodeId,
     pub lat: Latitude,

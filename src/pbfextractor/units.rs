@@ -18,7 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::ops::{Div, Mul};
 
-#[derive(PartialEq, Debug, Clone, Copy)]
+#[derive(PartialEq, Debug, Clone, Copy, PartialOrd)]
 pub struct Meters(pub f64);
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Kilometers(pub f64);
