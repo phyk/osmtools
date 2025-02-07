@@ -86,7 +86,7 @@ fn get_outpath(outpath: &str, city_name: &str, network_type: &str) -> String {
     outpath
 }
 
-pub fn load_osm_walking(
+pub fn _load_osm_walking(
     city_name: &str,
     geometry_vec: Vec<(f64, f64)>,
     archive_path: &str,
@@ -116,7 +116,7 @@ pub fn load_osm_walking(
     )
     .expect("Error in writing");
 }
-pub fn load_osm_cycling(
+pub fn _load_osm_cycling(
     city_name: &str,
     geometry_vec: Vec<(f64, f64)>,
     archive_path: &str,
@@ -145,7 +145,7 @@ pub fn load_osm_cycling(
     )
     .expect("Error in writing");
 }
-pub fn load_osm_driving(
+pub fn _load_osm_driving(
     city_name: &str,
     geometry_vec: Vec<(f64, f64)>,
     archive_path: &str,
