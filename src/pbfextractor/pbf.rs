@@ -30,6 +30,7 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread::spawn;
+use log::info;
 
 pub type MetricIndices = BTreeMap<String, usize>;
 #[derive(Debug)]
@@ -121,7 +122,7 @@ impl<Filter: EdgeFilter> OsmLoaderBuilder<Filter> {
 impl<Filter: EdgeFilter> Loader<Filter> {
     /// Loads the graph from a pbf file.
     pub fn load_graph(&self) -> (Vec<Node>, Vec<Edge>) {
-        println!(
+        info!(
             "Extracting data out of: {}",
             self.pbf_path
                 .to_str()
@@ -143,7 +144,7 @@ impl<Filter: EdgeFilter> Loader<Filter> {
                 }
             })
             .collect();
-        println!("Collected {} edges", edges.len());
+        info!("Collected {} edges", edges.len());
         reader.rewind().expect("Can't rewind pbf file!");
         drop(id_sender);
 
@@ -177,9 +178,9 @@ impl<Filter: EdgeFilter> Loader<Filter> {
             })
             .collect();
 
-        println!("Collected {} nodes", nodes.len());
+        info!("Collected {} nodes", nodes.len());
         if self.filter_geometry.is_some() {
-            println!("Filtered {} nodes", skipped_nodes);
+            info!("Filtered {} nodes", skipped_nodes);
             let map: HashMap<OsmNodeId, (usize, &Node)> =
                 nodes.iter().enumerate().map(|n| (n.1.osm_id, n)).collect();
             let mut edges_replace: Vec<Edge> = vec![];
@@ -189,21 +190,21 @@ impl<Filter: EdgeFilter> Loader<Filter> {
                     edges_replace.push(edge);
                 }
             }
-            println!("Filtered {} edges", num_edges - edges_replace.len());
+            info!("Filtered {} edges", num_edges - edges_replace.len());
             edges = edges_replace;
         }
-        println!("Num Edges {}", edges.len());
+        info!("Num Edges {}", edges.len());
 
-        println!("Calculating Metrics");
+        info!("Calculating Metrics");
 
         self.rename_node_ids_and_calculate_node_metrics(&mut nodes, &mut edges);
 
-        println!("Deleting duplicate and dominated edges");
+        info!("Deleting duplicate and dominated edges");
 
         self.delete_duplicate_edges(&mut edges);
         edges = self.delete_dominated_edges(edges);
 
-        println!("{} edges left", edges.len());
+        info!("{} edges left", edges.len());
         (nodes, edges)
     }
 

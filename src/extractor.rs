@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufWriter, Error, ErrorKind};
 use std::path::{Path, PathBuf};
+use log::{info, LevelFilter};
 
 fn check_pbf_archives(
     city_name: &str,
@@ -31,33 +32,6 @@ fn check_pbf_archives(
         }
     }
     return Ok(pbf_path);
-}
-
-fn osm_loader_cycling(
-    pbf_path: PathBuf,
-    bounding_box: geo_types::geometry::Polygon,
-) -> Loader<BicycleEdgeFilter> {
-    let osm_loader: Loader<BicycleEdgeFilter> = OsmLoaderBuilder::default()
-        .edge_filter(BicycleEdgeFilter)
-        .target_crs("EPSG:4839")
-        .filter_geometry(bounding_box)
-        .pbf_path(pbf_path)
-        .build()
-        .expect("Parameter missing");
-    osm_loader
-}
-fn osm_loader_driving(
-    pbf_path: PathBuf,
-    bounding_box: geo_types::geometry::Polygon,
-) -> Loader<CarEdgeFilter> {
-    let osm_loader: Loader<CarEdgeFilter> = OsmLoaderBuilder::default()
-        .edge_filter(CarEdgeFilter)
-        .target_crs("EPSG:4839")
-        .filter_geometry(bounding_box)
-        .pbf_path(pbf_path)
-        .build()
-        .expect("Parameter missing");
-    osm_loader
 }
 
 fn get_edge_outpath(outpath: &str, city_name: &str, network_type: &str) -> String {
@@ -86,6 +60,10 @@ fn get_outpath(outpath: &str, city_name: &str, network_type: &str) -> String {
     outpath
 }
 
+fn init_logging() {
+    rich_logger::init(LevelFilter::Debug).expect("Failed to initialize logger!");
+}
+
 pub fn _load_osm_walking(
     city_name: &str,
     geometry_vec: Vec<(f64, f64)>,
@@ -93,6 +71,7 @@ pub fn _load_osm_walking(
     outpath: &str,
     download: bool,
 ) {
+    init_logging();
     let bounding_box = Polygon::new(LineString::from(geometry_vec), vec![]);
     let pbf_path = check_pbf_archives(city_name, archive_path, download)
         .expect("Download failed or Path not existing");
@@ -123,6 +102,7 @@ pub fn _load_osm_cycling(
     outpath: &str,
     download: bool,
 ) {
+    init_logging();
     let bounding_box = Polygon::new(LineString::from(geometry_vec), vec![]);
     let pbf_path = check_pbf_archives(city_name, archive_path, download)
         .expect("Download failed or Path not existing");
@@ -152,6 +132,7 @@ pub fn _load_osm_driving(
     outpath: &str,
     download: bool,
 ) {
+    init_logging();
     let bounding_box = Polygon::new(LineString::from(geometry_vec), vec![]);
     let pbf_path = check_pbf_archives(city_name, archive_path, download)
         .expect("Download failed or Path not existing");
