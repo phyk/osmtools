@@ -10,7 +10,6 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufWriter, Error, ErrorKind};
 use std::path::{Path, PathBuf};
-use log::LevelFilter;
 
 fn check_pbf_archives(
     city_name: &str,
@@ -60,10 +59,6 @@ fn get_outpath(outpath: &str, city_name: &str, network_type: &str) -> String {
     outpath
 }
 
-fn init_logging() {
-    rich_logger::init(LevelFilter::Debug).expect("Failed to initialize logger!");
-}
-
 pub fn _load_osm_walking(
     city_name: &str,
     geometry_vec: Vec<(f64, f64)>,
@@ -71,7 +66,6 @@ pub fn _load_osm_walking(
     outpath: &str,
     download: bool,
 ) {
-    init_logging();
     let bounding_box = Polygon::new(LineString::from(geometry_vec), vec![]);
     let pbf_path = check_pbf_archives(city_name, archive_path, download)
         .expect("Download failed or Path not existing");
@@ -102,7 +96,6 @@ pub fn _load_osm_cycling(
     outpath: &str,
     download: bool,
 ) {
-    init_logging();
     let bounding_box = Polygon::new(LineString::from(geometry_vec), vec![]);
     let pbf_path = check_pbf_archives(city_name, archive_path, download)
         .expect("Download failed or Path not existing");
@@ -132,7 +125,6 @@ pub fn _load_osm_driving(
     outpath: &str,
     download: bool,
 ) {
-    init_logging();
     let bounding_box = Polygon::new(LineString::from(geometry_vec), vec![]);
     let pbf_path = check_pbf_archives(city_name, archive_path, download)
         .expect("Download failed or Path not existing");

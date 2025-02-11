@@ -15,6 +15,5 @@ petgraph = "0.6.5"
 proj = "0.27.2"
 rand = "0.8.5"
 reqwest = { version = "0.12.9", features = ["blocking"]}
-rich-logger = "0.1.17"
 serde = "1.0.215"
 smartstring = "1.0.1"
