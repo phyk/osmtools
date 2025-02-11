@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufWriter, Error, ErrorKind};
 use std::path::{Path, PathBuf};
-use log::{info, LevelFilter};
+use log::LevelFilter;
 
 fn check_pbf_archives(
     city_name: &str,

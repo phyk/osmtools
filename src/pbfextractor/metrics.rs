@@ -60,6 +60,7 @@ pub trait CostMetric<T>: Metric {
     fn calc(&self, costs: &[f64], map: &MetricIndices) -> MetricResult<T>;
 }
 
+#[allow(dead_code)]
 fn bounded_speed(tags: &Tags, driver_max: f64) -> MetricResult<KilometersPerHour> {
     let street_type = tags.get("highway").map(smartstring::alias::String::as_ref);
     let tag_speed = match street_type {
