@@ -20,6 +20,7 @@ use osmpbfreader::{OsmObj, OsmPbfReader, Way};
 use proj::Coord;
 
 use super::metrics::{Distance_, EdgeFilter, NodeMetric};
+use log::info;
 use proj::Proj;
 use std::cmp::Ordering;
 use std::collections::hash_map::HashMap;
@@ -30,7 +31,6 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread::spawn;
-use log::info;
 
 pub type MetricIndices = BTreeMap<String, usize>;
 #[derive(Debug)]
@@ -355,14 +355,22 @@ impl Node {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct Edge {
     pub source: NodeId,
+    pub source_osm: OsmNodeId,
     pub dest: NodeId,
+    pub dest_osm: OsmNodeId,
     pub dist: f64,
 }
 
 impl Edge {
     pub fn new(source: NodeId, dest: NodeId) -> Edge {
         let dist = -1.0;
-        Edge { source, dest, dist }
+        Edge {
+            source,
+            source_osm: source,
+            dest,
+            dest_osm: dest,
+            dist,
+        }
     }
 }
 
