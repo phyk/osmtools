@@ -5,6 +5,9 @@ use crate::pbfextractor::pbf::{Loader, OsmLoaderBuilder};
 use crate::pbfextractor::units::Meters;
 use geo::{LineString, Polygon};
 use h3o::{LatLng, Resolution};
+use log::error;
+use polars::df;
+use polars_io::parquet::write::ParquetWriter;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
@@ -158,6 +161,24 @@ struct H3NodeMapping {
     h3_cell_id: String,
 }
 
+macro_rules! struct_to_dataframe {
+    ($input:expr, [$($field:ident),+]) => {
+        {
+            let len = $input.len().to_owned();
+
+            // Extract the field values into separate vectors
+            $(let mut $field = Vec::with_capacity(len);)*
+
+            for e in $input.into_iter() {
+                $($field.push(e.$field);)*
+            }
+            df! {
+                $(stringify!($field) => $field,)*
+            }
+        }
+    };
+}
+
 fn write_graph<T: EdgeFilter>(
     l: &Loader<T>,
     outpath_edges: &str,
@@ -173,11 +194,21 @@ fn write_graph<T: EdgeFilter>(
 
     let (nodes, edges) = l.load_graph();
 
-    let mut wtr = csv::Writer::from_writer(edge_writer);
-    for edge in edges {
-        wtr.serialize(edge)?;
-    }
-    wtr.flush()?;
+    match struct_to_dataframe!(edges, [source, source_osm, dest, dest_osm, dist]) {
+        Ok(edges_df) => {
+            let mut wtr = ParquetWriter::new(edge_writer);
+            wtr.finish(&mut edges_df);
+        }
+        Err(_) => {
+            error!("Could not create polars Dataframe, falling back to csv method");
+            let mut wtr = csv::Writer::from_writer(edge_writer);
+            for edge in edges {
+                wtr.serialize(edge)?;
+            }
+            wtr.flush()?;
+        }
+    };
+
     wtr = csv::Writer::from_writer(node_writer);
     let mut h3_mapping = HashMap::new();
     for node in nodes {
