@@ -37,6 +37,11 @@ pub type MetricIndices = BTreeMap<String, usize>;
 pub struct LoaderBuildError {
     source: String,
 }
+impl LoaderBuildError {
+    pub fn new(source: String) -> LoaderBuildError {
+        LoaderBuildError { source }
+    }
+}
 
 impl Error for LoaderBuildError {}
 impl Display for LoaderBuildError {

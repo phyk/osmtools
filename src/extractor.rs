@@ -1,6 +1,7 @@
 use crate::pbfextractor::metrics::{
     BicycleEdgeFilter, CarEdgeFilter, Distance_, EdgeFilter, NodeMetric, WalkingEdgeFilter,
 };
+use crate::pbfextractor::node_pbf::{PoiLoader, PoiLoaderBuilder};
 use crate::pbfextractor::pbf::{Loader, OsmLoaderBuilder};
 use crate::pbfextractor::units::Meters;
 use geo::{LineString, Polygon};
@@ -57,6 +58,40 @@ fn get_outpath(outpath: &str, city_name: &str, network_type: &str) -> String {
     outpath.push_str("_");
     outpath.push_str(network_type);
     outpath
+}
+
+pub fn _load_osm_pois(
+    city_name: &str,
+    geometry_vec: Vec<(f64, f64)>,
+    archive_path: &str,
+    outpath: &str,
+    download: bool,
+) {
+    let bounding_box = Polygon::new(LineString::from(geometry_vec), vec![]);
+    let pbf_path = check_pbf_archives(city_name, archive_path, download)
+        .expect("Download failed or Path not existing");
+    // Initialize KdTree with nodes (read from csv) in target_crs
+    let mut kdtree = kdtree::KdTree::new(2);
+    kdtree.add(&[0.0, 0.0], &1).unwrap();
+    // Then give kdtree to PoiLoader, or create it inside of PoiLoader from nodes from csv
+    // Search nearest neighbor in loop in PoiLoader
+    let osm_loader: PoiLoader = PoiLoaderBuilder::default()
+        .target_crs("EPSG:4839")
+        .filter_geometry(bounding_box)
+        .pbf_path(pbf_path)
+        .build()
+        .expect("Parameter missing");
+    let outpath_nodes = get_node_outpath(outpath, city_name, "pois");
+
+    let nodes = osm_loader.load_graph();
+    // let graph = flate2::write::GzEncoder::new(graph, flate2::Compression::best());
+    let output_file_nodes = File::create(outpath_nodes).unwrap();
+    let node_writer = BufWriter::new(output_file_nodes);
+
+    let mut wtr = csv::Writer::from_writer(node_writer);
+    for node in nodes {
+        let _ = wtr.serialize(node);
+    }
 }
 
 pub fn _load_osm_walking(
