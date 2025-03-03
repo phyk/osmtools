@@ -1,4 +1,4 @@
-use osmtools::extractor::{_load_osm_pois, _load_osm_walking};
+use osmtools::extractor::_load_osm_pois;
 
 fn main() {
     let bounding_box = vec![

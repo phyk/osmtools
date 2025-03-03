@@ -60,17 +60,6 @@ fn get_outpath(outpath: &str, city_name: &str, network_type: &str) -> String {
     outpath
 }
 
-pub fn _load_osm_networks_and_mappings(
-    city_name: &str,
-    geometry_vec: Vec<(f64, f64)>,
-    archive_path: &str,
-    nodes_to_match_path: &str,
-    outpath: &str,
-    download: bool
-) {
-    panic!("Not Implemented");
-}
-
 pub fn _load_osm_pois(
     city_name: &str,
     geometry_vec: Vec<(f64, f64)>,
