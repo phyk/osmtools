@@ -1,17 +1,21 @@
 use super::pbf::{Latitude, LoaderBuildError, Longitude, OsmNodeId};
-use super::units::Meters;
 use geo::{Contains, Polygon};
+use kiddo::ImmutableKdTree;
+use kiddo::SquaredEuclidean;
 use log::info;
 use osmpbfreader::{Node, OsmObj, OsmPbfReader};
-use proj::Proj;
+use proj::{Coord, Proj};
 use serde::Serialize;
 use std::fs::File;
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 pub struct PoiLoader {
     pbf_path: PathBuf,
     filter_geometry: Option<Polygon>,
     pub proj_to_m: Proj,
+    kdtree: ImmutableKdTree<f64, 2>,
+    nodes_to_match: Vec<super::pbf::Node>,
 }
 
 #[derive(Debug, Serialize)]
@@ -36,13 +40,13 @@ pub struct Poi {
 }
 
 impl Poi {
-    fn new(osm_id: OsmNodeId, lat: Latitude, long: Longitude, poi_type: PoiType) -> Poi {
+    fn new(osm_id: OsmNodeId, lat: Latitude, long: Longitude, nearest_osm_node: OsmNodeId, dist_to_nearest: f64, poi_type: PoiType) -> Poi {
         Poi {
             osm_id,
             lat,
             long,
-            nearest_osm_node: 0,
-            dist_to_nearest: -1.0,
+            nearest_osm_node,
+            dist_to_nearest,
             poi_type,
         }
     }
@@ -53,6 +57,7 @@ pub struct PoiLoaderBuilder {
     pbf_path: Option<PathBuf>,
     filter_geometry: Option<Polygon>,
     target_crs: Option<String>,
+    nodes_to_match: Option<Vec<super::pbf::Node>>,
 }
 
 #[allow(dead_code)]
@@ -77,6 +82,28 @@ impl PoiLoaderBuilder {
         new.target_crs = Some(value.into());
         new
     }
+    pub fn nodes_to_match<VALUE: Into<Vec<super::pbf::Node>>>(&mut self, value: VALUE) -> &mut Self{
+        let new = self;
+        new.nodes_to_match = Some(value.into());
+        new
+    }
+    pub fn nodes_to_match_csv<VALUE: Into<String>>(&mut self, value: VALUE) -> &mut Self {
+        let new = self;
+        return match File::open(value.into()) {
+            Ok(file) => {
+                let node_reader = BufReader::new(file);
+                let mut reader = csv::Reader::from_reader(node_reader);
+                new.nodes_to_match = Some(reader.deserialize().filter(|i| i.is_ok()).map(|i| i.unwrap()).collect());
+                if new.nodes_to_match.as_ref().unwrap().len() == 0 {
+                    new.nodes_to_match = None;
+                }
+                new
+            },
+            Err(_) => {
+                new
+            },
+        };
+    }
     pub fn build(&self) -> Result<PoiLoader, LoaderBuildError> {
         let target_crs = self
             .target_crs
@@ -84,6 +111,12 @@ impl PoiLoaderBuilder {
             .expect("Requires CRS to be set for any calculation");
         let proj_to_m = Proj::new_known_crs("EPSG:4326", &target_crs, None)
             .expect("Error in creation of Projection");
+        let nodes_to_match = match &self.nodes_to_match {
+            Some(value) => value,
+            None => panic!("Nodes are necessary for matching")
+        };
+        let nodes_projected: Vec<[f64; 2]> = nodes_to_match.iter().map(|n| proj_to_m.convert((n.x(), n.y())).unwrap().into()).collect();
+        let kdtree = ImmutableKdTree::new_from_slice(&nodes_projected);
 
         Ok(PoiLoader {
             pbf_path: match self.pbf_path {
@@ -91,7 +124,9 @@ impl PoiLoaderBuilder {
                 None => return Err(LoaderBuildError::new("pbf_path".into())),
             },
             filter_geometry: Clone::clone(&self.filter_geometry),
-            proj_to_m: proj_to_m,
+            proj_to_m,
+            nodes_to_match: nodes_to_match.to_owned(),
+            kdtree
         })
     }
 }
@@ -110,13 +145,16 @@ impl PoiLoader {
 
         let mut skipped_nodes = 0;
 
-        let mut nodes: Vec<Poi> = reader
+        let nodes: Vec<Poi> = reader
             .par_iter()
             .filter_map(|obj| {
                 if let Ok(OsmObj::Node(n)) = obj {
                     let lat = f64::from(n.decimicro_lat) / 10_000_000.0;
                     let lng = f64::from(n.decimicro_lon) / 10_000_000.0;
                     let point = geo::Point::new(lng, lat);
+                    let point_convert = self.proj_to_m.convert(point).unwrap();
+                    let nearest_node = self.kdtree.nearest_one::<SquaredEuclidean>(&[point_convert.x(), point_convert.y()]);
+                    let osm_nearest_node: &super::pbf::Node = self.nodes_to_match.get::<usize>(nearest_node.item as usize).expect("Impossible, all nodes have to exist");
                     if self
                         .filter_geometry
                         .as_ref()
@@ -126,7 +164,7 @@ impl PoiLoader {
                         None
                     } else {
                         match identify_type(&n) {
-                            Some(v) => Some(Poi::new(n.id.0 as usize, lat, lng, v)),
+                            Some(v) => Some(Poi::new(n.id.0 as usize, lat, lng, osm_nearest_node.osm_id, nearest_node.distance, v)),
                             None => None,
                         }
                     }

@@ -60,25 +60,36 @@ fn get_outpath(outpath: &str, city_name: &str, network_type: &str) -> String {
     outpath
 }
 
+pub fn _load_osm_networks_and_mappings(
+    city_name: &str,
+    geometry_vec: Vec<(f64, f64)>,
+    archive_path: &str,
+    nodes_to_match_path: &str,
+    outpath: &str,
+    download: bool
+) {
+    panic!("Not Implemented");
+}
+
 pub fn _load_osm_pois(
     city_name: &str,
     geometry_vec: Vec<(f64, f64)>,
     archive_path: &str,
+    nodes_to_match_path: &str,
     outpath: &str,
     download: bool,
 ) {
     let bounding_box = Polygon::new(LineString::from(geometry_vec), vec![]);
     let pbf_path = check_pbf_archives(city_name, archive_path, download)
         .expect("Download failed or Path not existing");
-    // Initialize KdTree with nodes (read from csv) in target_crs
-    let mut kdtree = kdtree::KdTree::new(2);
-    kdtree.add(&[0.0, 0.0], &1).unwrap();
+    
     // Then give kdtree to PoiLoader, or create it inside of PoiLoader from nodes from csv
     // Search nearest neighbor in loop in PoiLoader
     let osm_loader: PoiLoader = PoiLoaderBuilder::default()
         .target_crs("EPSG:4839")
         .filter_geometry(bounding_box)
         .pbf_path(pbf_path)
+        .nodes_to_match_csv(nodes_to_match_path)
         .build()
         .expect("Parameter missing");
     let outpath_nodes = get_node_outpath(outpath, city_name, "pois");

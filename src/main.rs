@@ -8,7 +8,7 @@ fn main() {
         (7.304073531148258, 50.7405089663172),
     ];
 
-    _load_osm_pois("Koeln", bounding_box, "data", "data", false);
+    _load_osm_pois("Koeln", bounding_box, "data", "data/koeln_walking_nodes.csv", "data", false);
     // _load_osm_walking("Koeln", bounding_box, "data", "data", true);
     // load_osm_cycling("Koeln", bounding_box, "data", "data", false);
 }
