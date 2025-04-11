@@ -277,7 +277,7 @@ impl<Filter: EdgeFilter> Loader<Filter> {
             e.source = source_id;
             e.dest = dest_id;
 
-            e.dist = Distance_
+            e.length = Distance_
                 .calc(source, dest, &self.proj_to_m)
                 .expect("Cannot calculate distance");
         }
@@ -291,8 +291,8 @@ impl<Filter: EdgeFilter> Loader<Filter> {
             }
             if result == Ordering::Equal {
                 result = e1
-                    .dist
-                    .partial_cmp(&e2.dist)
+                    .length
+                    .partial_cmp(&e2.length)
                     .expect("Failure in comparing values");
             }
             result
@@ -308,7 +308,7 @@ impl<Filter: EdgeFilter> Loader<Filter> {
             if !(first.source == second.source && first.dest == second.dest) {
                 continue;
             }
-            if first.dist <= second.dist {
+            if first.length <= second.length {
                 indices.insert(i);
             }
         }
@@ -363,7 +363,7 @@ pub struct Edge {
     pub source_osm: OsmNodeId,
     pub dest: NodeId,
     pub dest_osm: OsmNodeId,
-    pub dist: f64,
+    pub length: f64,
 }
 
 impl Edge {
@@ -374,13 +374,13 @@ impl Edge {
             source_osm: source,
             dest,
             dest_osm: dest,
-            dist,
+            length: dist,
         }
     }
 }
 
 impl PartialEq for Edge {
     fn eq(&self, rhs: &Self) -> bool {
-        self.source == rhs.source && self.dest == rhs.dest && self.dist == rhs.dist
+        self.source == rhs.source && self.dest == rhs.dest && self.length == rhs.length
     }
 }
