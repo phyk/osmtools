@@ -1,6 +1,5 @@
-
-
-pub macro_rules! struct_to_dataframe {
+#[macro_export]
+macro_rules! struct_to_dataframe {
     ($input:expr, [$($field:ident),+]) => {
         {
             let len = $input.len().to_owned();
@@ -11,7 +10,7 @@ pub macro_rules! struct_to_dataframe {
             for e in $input.into_iter() {
                 $($field.push(e.$field);)*
             }
-            df! {
+            polars::df! {
                 $(stringify!($field) => $field,)*
             }
         }

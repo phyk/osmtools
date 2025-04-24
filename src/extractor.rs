@@ -6,7 +6,7 @@ use crate::pbfextractor::pbf::{Loader, OsmLoaderBuilder};
 use crate::pbfextractor::units::Meters;
 use geo::{LineString, Polygon};
 use h3o::{LatLng, Resolution};
-use crate::utils::polars_macro::struct_to_dataframe;
+use crate::struct_to_dataframe;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
@@ -89,14 +89,9 @@ pub fn _load_osm_pois(
     let output_file_nodes = File::create(outpath_nodes).unwrap();
     let node_writer = BufWriter::new(output_file_nodes);
 
-    let mut parquet_writer = polars_io::parquet::write::ParquetWriter::new(node_writer);
-    let df = struct_to_dataframe!(nodes, [osm_id, lat, long, nearest_osm_node, dist_to_nearest]);
+    let parquet_writer = polars_io::parquet::write::ParquetWriter::new(node_writer);
+    let mut df = struct_to_dataframe!(nodes, [osm_id, lat, long, nearest_osm_node, dist_to_nearest]).unwrap();
     parquet_writer.finish(&mut df);
-
-    let mut wtr = csv::Writer::from_writer(node_writer);
-    for node in nodes {
-        let _ = wtr.serialize(node);
-    }
 }
 
 pub fn _load_osm_walking(
@@ -197,7 +192,7 @@ struct ClosestNode {
 }
 #[derive(Serialize, Deserialize)]
 struct H3NodeMapping {
-    osm_node_id: usize,
+    osm_node_id: u64,
     h3_cell_id: String,
 }
 
@@ -221,7 +216,7 @@ fn write_graph<T: EdgeFilter>(
     parquet_writer.finish(&mut df);
 
     let mut h3_mapping = HashMap::new();
-    for node in nodes {
+    for node in &nodes {
         let coord = LatLng::new(node.lat, node.long).expect("Coord should always be correct");
         let cell = coord.to_cell(Resolution::Eight);
         let center_coord = LatLng::from(cell);
@@ -258,7 +253,7 @@ fn write_graph<T: EdgeFilter>(
     df = struct_to_dataframe!(nodes, [osm_id, lat, long]).unwrap();
     parquet_writer.finish(&mut df);
     parquet_writer = polars_io::parquet::write::ParquetWriter::new(mapping_writer);
-    df = struct_to_dataframe!(h3_mapping.iter().map(|(key, value)| H3NodeMapping{osm_node_id: value.node.osm_id, h3_cell_id: key.clone()}).collect(), [osm_node_id, h3_cell_id]).unwrap();
+    df = struct_to_dataframe!(h3_mapping.iter().map(|(key, value)| H3NodeMapping{osm_node_id: value.node.osm_id, h3_cell_id: key.clone()}).collect::<Vec<H3NodeMapping>>(), [osm_node_id, h3_cell_id]).unwrap();
     parquet_writer.finish(&mut df);
     Ok(())
 }

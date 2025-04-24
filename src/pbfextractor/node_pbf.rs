@@ -192,7 +192,7 @@ impl PoiLoader {
                     } else {
                         match identify_type(&n) {
                             Some(v) => Some(Poi::new(
-                                n.id.0 as usize,
+                                n.id.0.try_into().unwrap(),
                                 lat,
                                 lng,
                                 osm_nearest_node.osm_id,

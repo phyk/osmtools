@@ -182,7 +182,7 @@ impl<Filter: EdgeFilter> Loader<Filter> {
                             skipped_nodes += 1;
                             None
                         } else {
-                            Some(Node::new(n.id.0 as usize, lat, lng))
+                            Some(Node::new(n.id.0.try_into().unwrap(), lat, lng))
                         }
                     } else {
                         None
@@ -288,8 +288,8 @@ impl<Filter: EdgeFilter> Loader<Filter> {
         for e in edges.iter_mut() {
             let (source_id, source) = map[&e.source];
             let (dest_id, dest) = map[&e.dest];
-            e.source = source_id;
-            e.dest = dest_id;
+            e.source = source_id.try_into().unwrap();
+            e.dest = dest_id.try_into().unwrap();
 
             e.length = Distance_
                 .calc(source, dest, &self.proj_to_m)
@@ -335,8 +335,8 @@ impl<Filter: EdgeFilter> Loader<Filter> {
     }
 }
 
-pub type NodeId = usize;
-pub type OsmNodeId = usize;
+pub type NodeId = u64;
+pub type OsmNodeId = u64;
 pub type Latitude = f64;
 pub type Longitude = f64;
 
