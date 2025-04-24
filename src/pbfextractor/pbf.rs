@@ -55,6 +55,7 @@ pub struct Loader<Filter: EdgeFilter> {
     edge_filter: Filter,
     filter_geometry: Option<Polygon>,
     pub proj_to_m: Proj,
+    reverse_edges: bool,
 }
 
 #[derive(Default)]
@@ -63,6 +64,7 @@ pub struct OsmLoaderBuilder<Filter: EdgeFilter> {
     edge_filter: Option<Filter>,
     filter_geometry: Option<Polygon>,
     target_crs: Option<String>,
+    reverse_edges: Option<bool>,
 }
 
 #[allow(dead_code)]
@@ -92,6 +94,11 @@ impl<Filter: EdgeFilter> OsmLoaderBuilder<Filter> {
         new.target_crs = Some(value.into());
         new
     }
+    pub fn reverse_edges<VALUE: Into<bool>>(&mut self, value: VALUE) -> &mut Self {
+        let new = self;
+        new.reverse_edges = Some(value.into());
+        new
+    }
     pub fn build(&self) -> Result<Loader<Filter>, LoaderBuildError> {
         let target_crs = self
             .target_crs
@@ -99,7 +106,6 @@ impl<Filter: EdgeFilter> OsmLoaderBuilder<Filter> {
             .expect("Requires CRS to be set for any calculation");
         let proj_to_m = Proj::new_known_crs("EPSG:4326", &target_crs, None)
             .expect("Error in creation of Projection");
-
         Ok(Loader {
             pbf_path: match self.pbf_path {
                 Some(ref value) => Clone::clone(value),
@@ -119,6 +125,10 @@ impl<Filter: EdgeFilter> OsmLoaderBuilder<Filter> {
             },
             filter_geometry: Clone::clone(&self.filter_geometry),
             proj_to_m: proj_to_m,
+            reverse_edges: match self.reverse_edges {
+                Some(ref value) => Clone::clone(value),
+                None => false,
+            },
         })
     }
 }
@@ -235,8 +245,12 @@ impl<Filter: EdgeFilter> Loader<Filter> {
         if self.edge_filter.is_invalid(&w.tags) {
             return edges;
         }
-
-        let is_one_way = self.is_one_way(w);
+        let is_one_way: bool;
+        if self.reverse_edges {
+            is_one_way = false;
+        } else {
+            is_one_way = self.is_one_way(w);
+        }
         for (index, node) in w.nodes[0..(w.nodes.len() - 1)].iter().enumerate() {
             id_sender.send(*node).expect("could not send id to id set");
             let edge = Edge::new(node.0 as NodeId, w.nodes[index + 1].0 as NodeId);

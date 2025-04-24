@@ -6,7 +6,7 @@ use crate::pbfextractor::pbf::{Loader, OsmLoaderBuilder};
 use crate::pbfextractor::units::Meters;
 use geo::{LineString, Polygon};
 use h3o::{LatLng, Resolution};
-use log::{info, warn};
+use crate::utils::polars_macro::struct_to_dataframe;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
@@ -37,18 +37,18 @@ fn check_pbf_archives(
 
 fn get_edge_outpath(outpath: &str, city_name: &str, network_type: &str) -> String {
     let mut outpath_edges = get_outpath(outpath, city_name, network_type);
-    outpath_edges.push_str("_edges.csv");
+    outpath_edges.push_str("_edges.parquet");
     outpath_edges
 }
 
 fn get_node_outpath(outpath: &str, city_name: &str, network_type: &str) -> String {
     let mut outpath_node = get_outpath(outpath, city_name, network_type);
-    outpath_node.push_str("_nodes.csv");
+    outpath_node.push_str("_nodes.parquet");
     outpath_node
 }
 fn get_mapping_outpath(outpath: &str, city_name: &str, network_type: &str) -> String {
     let mut outpath_node = get_outpath(outpath, city_name, network_type);
-    outpath_node.push_str("_h3mapping.csv");
+    outpath_node.push_str("_h3mapping.parquet");
     outpath_node
 }
 
@@ -89,6 +89,10 @@ pub fn _load_osm_pois(
     let output_file_nodes = File::create(outpath_nodes).unwrap();
     let node_writer = BufWriter::new(output_file_nodes);
 
+    let mut parquet_writer = polars_io::parquet::write::ParquetWriter::new(node_writer);
+    let df = struct_to_dataframe!(nodes, [osm_id, lat, long, nearest_osm_node, dist_to_nearest]);
+    parquet_writer.finish(&mut df);
+
     let mut wtr = csv::Writer::from_writer(node_writer);
     for node in nodes {
         let _ = wtr.serialize(node);
@@ -110,6 +114,7 @@ pub fn _load_osm_walking(
         .target_crs("EPSG:4839")
         .filter_geometry(bounding_box)
         .pbf_path(pbf_path)
+        .reverse_edges(true)
         .build()
         .expect("Parameter missing");
     let outpath_edges = get_edge_outpath(outpath, city_name, "walking");
@@ -128,6 +133,7 @@ pub fn _load_osm_walking(
 pub fn _load_osm_cycling(
     city_name: &str,
     geometry_vec: Vec<(f64, f64)>,
+    reverse_edges: &bool,
     archive_path: &str,
     outpath: &str,
     download: bool,
@@ -140,6 +146,7 @@ pub fn _load_osm_cycling(
         .target_crs("EPSG:4839")
         .filter_geometry(bounding_box)
         .pbf_path(pbf_path)
+        .reverse_edges(*reverse_edges)
         .build()
         .expect("Parameter missing");
     let outpath_edges = get_edge_outpath(outpath, city_name, "cycling");
@@ -209,12 +216,10 @@ fn write_graph<T: EdgeFilter>(
 
     let (nodes, edges) = l.load_graph();
 
-    let mut wtr = csv::Writer::from_writer(edge_writer);
-    for edge in edges {
-        wtr.serialize(edge)?;
-    }
-    wtr.flush()?;
-    wtr = csv::Writer::from_writer(node_writer);
+    let mut parquet_writer = polars_io::parquet::write::ParquetWriter::new(edge_writer);
+    let mut df: polars::prelude::DataFrame = struct_to_dataframe!(edges, [source, source_osm, dest, dest_osm, length]).unwrap();
+    parquet_writer.finish(&mut df);
+
     let mut h3_mapping = HashMap::new();
     for node in nodes {
         let coord = LatLng::new(node.lat, node.long).expect("Coord should always be correct");
@@ -248,15 +253,12 @@ fn write_graph<T: EdgeFilter>(
                 },
             );
         }
-        wtr.serialize(node)?;
     }
-    wtr.flush()?;
-    wtr = csv::Writer::from_writer(mapping_writer);
-    for (key, value) in h3_mapping.iter() {
-        wtr.serialize(H3NodeMapping {
-            osm_node_id: value.node.osm_id,
-            h3_cell_id: key.clone(),
-        })?;
-    }
+    parquet_writer = polars_io::parquet::write::ParquetWriter::new(node_writer);
+    df = struct_to_dataframe!(nodes, [osm_id, lat, long]).unwrap();
+    parquet_writer.finish(&mut df);
+    parquet_writer = polars_io::parquet::write::ParquetWriter::new(mapping_writer);
+    df = struct_to_dataframe!(h3_mapping.iter().map(|(key, value)| H3NodeMapping{osm_node_id: value.node.osm_id, h3_cell_id: key.clone()}).collect(), [osm_node_id, h3_cell_id]).unwrap();
+    parquet_writer.finish(&mut df);
     Ok(())
 }
