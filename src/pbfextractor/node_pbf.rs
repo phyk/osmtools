@@ -199,7 +199,7 @@ impl PoiLoader {
                                 lat,
                                 lng,
                                 osm_nearest_node.osm_id,
-                                nearest_node.distance,
+                                nearest_node.distance.sqrt(),
                                 v,
                             )),
                             None => None,
