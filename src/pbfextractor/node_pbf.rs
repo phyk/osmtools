@@ -5,6 +5,9 @@ use kiddo::SquaredEuclidean;
 use log::info;
 use log::warn;
 use osmpbfreader::{Node, OsmObj, OsmPbfReader};
+use polars::prelude::DataFrame;
+use polars_io::SerReader;
+use std::iter::zip;
 use proj::{Coord, Proj};
 use serde::Serialize;
 use std::fs::File;
@@ -98,23 +101,14 @@ impl PoiLoaderBuilder {
         new.nodes_to_match = Some(value.into());
         new
     }
-    pub fn nodes_to_match_csv<VALUE: Into<String>>(&mut self, value: VALUE) -> &mut Self {
+    pub fn nodes_to_match_parquet<VALUE: Into<String>>(&mut self, value: VALUE) -> &mut Self {
         let new = self;
         return match File::open(value.into()) {
             Ok(file) => {
                 let node_reader = BufReader::new(file);
-                let mut reader = csv::Reader::from_reader(node_reader);
-                new.nodes_to_match = Some(
-                    reader
-                        .deserialize()
-                        .filter(|i| i.is_ok())
-                        .map(|i| i.unwrap())
-                        .collect(),
-                );
-                if new.nodes_to_match.as_ref().unwrap().len() == 0 {
-                    new.nodes_to_match = None;
-                }
-                new
+                let reader = polars_io::parquet::read::ParquetReader::new(node_reader).read_parallel(polars::prelude::ParallelStrategy::Auto);
+                let df = reader.finish().unwrap();
+                new.nodes_to_match_polars(df)
             }
             Err(error) => {
                 warn!("{error}");
@@ -122,6 +116,15 @@ impl PoiLoaderBuilder {
                 new
             }
         };
+    }
+    pub fn nodes_to_match_polars(&mut self, df: DataFrame) -> &mut Self {
+        let new = self;
+        new.nodes_to_match = Some(
+            zip(df.column("osm_id").unwrap().u64().expect("wrong dtype on osm id").into_iter(), zip(df.column("lat").unwrap().f64().expect("Lat has wrong dtype").into_iter(), df.column("long").unwrap().f64().expect("Long has wrong dtype").into_iter())).map(
+                |(osm_id, (lat, long))| super::pbf::Node::new(osm_id.unwrap(), lat.unwrap(), long.unwrap())
+            ).collect()
+        );
+        new
     }
     pub fn build(&self) -> Result<PoiLoader, LoaderBuildError> {
         let target_crs = self

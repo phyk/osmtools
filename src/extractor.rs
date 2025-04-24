@@ -1,11 +1,12 @@
 use crate::pbfextractor::metrics::{
     BicycleEdgeFilter, CarEdgeFilter, Distance_, EdgeFilter, NodeMetric, WalkingEdgeFilter,
 };
-use crate::pbfextractor::node_pbf::{PoiLoader, PoiLoaderBuilder};
+use crate::pbfextractor::node_pbf::PoiLoaderBuilder;
 use crate::pbfextractor::pbf::{Loader, OsmLoaderBuilder};
 use crate::pbfextractor::units::Meters;
 use geo::{LineString, Polygon};
 use h3o::{LatLng, Resolution};
+use polars::frame::DataFrame;
 use crate::struct_to_dataframe;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -65,33 +66,42 @@ pub fn _load_osm_pois(
     city_name: &str,
     geometry_vec: Vec<(f64, f64)>,
     archive_path: &str,
-    nodes_to_match_path: &str,
+    nodes_to_match_path: Option<&str>,
+    nodes_to_match_df: Option<&DataFrame>,
     outpath: &str,
     download: bool,
-) {
+) -> DataFrame {
     let bounding_box = Polygon::new(LineString::from(geometry_vec), vec![]);
     let pbf_path = check_pbf_archives(city_name, archive_path, download)
         .expect("Download failed or Path not existing");
 
     // Then give kdtree to PoiLoader, or create it inside of PoiLoader from nodes from csv
     // Search nearest neighbor in loop in PoiLoader
-    let osm_loader: PoiLoader = PoiLoaderBuilder::default()
-        .target_crs("EPSG:4839")
+    let mut osm_loader_builder = PoiLoaderBuilder::default();
+
+    osm_loader_builder.target_crs("EPSG:4839")
         .filter_geometry(bounding_box)
-        .pbf_path(pbf_path)
-        .nodes_to_match_csv(nodes_to_match_path)
-        .build()
+        .pbf_path(pbf_path);
+    match nodes_to_match_df {
+        Some(df) => {osm_loader_builder.nodes_to_match_polars(df.clone());},
+        _ => (),
+    }
+    match nodes_to_match_path {
+        Some(path) => {osm_loader_builder.nodes_to_match_parquet(path);},
+        None => ()
+    }
+    let osm_loader = osm_loader_builder.build()
         .expect("Parameter missing");
     let outpath_nodes = get_node_outpath(outpath, city_name, "pois");
 
     let nodes = osm_loader.load_graph();
-    // let graph = flate2::write::GzEncoder::new(graph, flate2::Compression::best());
     let output_file_nodes = File::create(outpath_nodes).unwrap();
     let node_writer = BufWriter::new(output_file_nodes);
 
     let parquet_writer = polars_io::parquet::write::ParquetWriter::new(node_writer);
     let mut df = struct_to_dataframe!(nodes, [osm_id, lat, long, nearest_osm_node, dist_to_nearest]).unwrap();
-    parquet_writer.finish(&mut df);
+    parquet_writer.finish(&mut df).unwrap();
+    df
 }
 
 pub fn _load_osm_walking(
@@ -100,7 +110,7 @@ pub fn _load_osm_walking(
     archive_path: &str,
     outpath: &str,
     download: bool,
-) {
+) -> (DataFrame, DataFrame, DataFrame) {
     let bounding_box = Polygon::new(LineString::from(geometry_vec), vec![]);
     let pbf_path = check_pbf_archives(city_name, archive_path, download)
         .expect("Download failed or Path not existing");
@@ -123,7 +133,7 @@ pub fn _load_osm_walking(
         &outpath_nodes,
         &outpath_mapping,
     )
-    .expect("Error in writing");
+    .expect("Error in writing")
 }
 pub fn _load_osm_cycling(
     city_name: &str,
@@ -132,7 +142,7 @@ pub fn _load_osm_cycling(
     archive_path: &str,
     outpath: &str,
     download: bool,
-) {
+) -> (DataFrame, DataFrame, DataFrame) {
     let bounding_box = Polygon::new(LineString::from(geometry_vec), vec![]);
     let pbf_path = check_pbf_archives(city_name, archive_path, download)
         .expect("Download failed or Path not existing");
@@ -154,7 +164,7 @@ pub fn _load_osm_cycling(
         &outpath_nodes,
         &outpath_mapping,
     )
-    .expect("Error in writing");
+    .expect("Error in writing")
 }
 pub fn _load_osm_driving(
     city_name: &str,
@@ -162,7 +172,7 @@ pub fn _load_osm_driving(
     archive_path: &str,
     outpath: &str,
     download: bool,
-) {
+) -> (DataFrame, DataFrame, DataFrame) {
     let bounding_box = Polygon::new(LineString::from(geometry_vec), vec![]);
     let pbf_path = check_pbf_archives(city_name, archive_path, download)
         .expect("Download failed or Path not existing");
@@ -183,7 +193,7 @@ pub fn _load_osm_driving(
         &outpath_nodes,
         &outpath_mapping,
     )
-    .expect("Error in writing");
+    .expect("Error in writing")
 }
 
 struct ClosestNode {
@@ -201,7 +211,7 @@ fn write_graph<T: EdgeFilter>(
     outpath_edges: &str,
     outpath_nodes: &str,
     outpath_mapping: &str,
-) -> Result<(), io::Error> {
+) -> Result<(DataFrame, DataFrame, DataFrame), io::Error> {
     let output_file_edges = File::create(outpath_edges).unwrap();
     let output_file_nodes = File::create(outpath_nodes).unwrap();
     let output_file_mapping = File::create(outpath_mapping).unwrap();
@@ -212,8 +222,8 @@ fn write_graph<T: EdgeFilter>(
     let (nodes, edges) = l.load_graph();
 
     let mut parquet_writer = polars_io::parquet::write::ParquetWriter::new(edge_writer);
-    let mut df: polars::prelude::DataFrame = struct_to_dataframe!(edges, [source, source_osm, dest, dest_osm, length]).unwrap();
-    parquet_writer.finish(&mut df);
+    let mut df_edges: polars::prelude::DataFrame = struct_to_dataframe!(edges, [source, source_osm, dest, dest_osm, length]).unwrap();
+    parquet_writer.finish(&mut df_edges).unwrap();
 
     let mut h3_mapping = HashMap::new();
     for node in &nodes {
@@ -250,10 +260,10 @@ fn write_graph<T: EdgeFilter>(
         }
     }
     parquet_writer = polars_io::parquet::write::ParquetWriter::new(node_writer);
-    df = struct_to_dataframe!(nodes, [osm_id, lat, long]).unwrap();
-    parquet_writer.finish(&mut df);
+    let mut df_nodes = struct_to_dataframe!(nodes, [osm_id, lat, long]).unwrap();
+    parquet_writer.finish(&mut df_nodes).unwrap();
     parquet_writer = polars_io::parquet::write::ParquetWriter::new(mapping_writer);
-    df = struct_to_dataframe!(h3_mapping.iter().map(|(key, value)| H3NodeMapping{osm_node_id: value.node.osm_id, h3_cell_id: key.clone()}).collect::<Vec<H3NodeMapping>>(), [osm_node_id, h3_cell_id]).unwrap();
-    parquet_writer.finish(&mut df);
-    Ok(())
+    let mut df_mapping = struct_to_dataframe!(h3_mapping.iter().map(|(key, value)| H3NodeMapping{osm_node_id: value.node.osm_id, h3_cell_id: key.clone()}).collect::<Vec<H3NodeMapping>>(), [osm_node_id, h3_cell_id]).unwrap();
+    parquet_writer.finish(&mut df_mapping).unwrap();
+    Ok((df_nodes, df_edges, df_mapping))
 }
