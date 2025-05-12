@@ -283,13 +283,16 @@ impl<Filter: EdgeFilter> Loader<Filter> {
     }
 
     fn rename_node_ids_and_calculate_node_metrics(&self, nodes: &mut [Node], edges: &mut [Edge]) {
-        let map: HashMap<OsmNodeId, (usize, &Node)> =
-            nodes.iter().enumerate().map(|n| (n.1.osm_id, n)).collect();
+        for (id, node) in nodes.iter_mut().enumerate(){
+            node.id = id.try_into().unwrap();
+        }
+        let map: HashMap<OsmNodeId, &Node> =
+            nodes.iter().map(|n| (n.osm_id, n)).collect();
         for e in edges.iter_mut() {
-            let (source_id, source) = map[&e.source];
-            let (dest_id, dest) = map[&e.dest];
-            e.source = source_id.try_into().unwrap();
-            e.dest = dest_id.try_into().unwrap();
+            let source = map[&e.source_osm];
+            let dest = map[&e.dest_osm];
+            e.source = source.id;
+            e.dest = dest.id;
 
             e.length = Distance_
                 .calc(source, dest, &self.proj_to_m)
@@ -343,6 +346,7 @@ pub type Longitude = f64;
 #[derive(serde::Serialize, serde::Deserialize, Clone, Copy)]
 pub struct Node {
     pub osm_id: OsmNodeId,
+    pub id: NodeId,
     pub lat: Latitude,
     pub long: Longitude,
 }
@@ -358,6 +362,7 @@ impl Coord<f64> for Node {
 
     fn from_xy(x: f64, y: f64) -> Self {
         Self {
+            id: 0,
             osm_id: 0,
             long: x,
             lat: y,
@@ -367,7 +372,7 @@ impl Coord<f64> for Node {
 
 impl Node {
     pub fn new(osm_id: OsmNodeId, lat: Latitude, long: Longitude) -> Node {
-        Node { osm_id, lat, long }
+        Node { id: osm_id, osm_id, lat, long }
     }
 }
 

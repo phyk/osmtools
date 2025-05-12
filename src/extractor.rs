@@ -7,6 +7,7 @@ use crate::pbfextractor::units::Meters;
 use geo::{LineString, Polygon};
 use h3o::{LatLng, Resolution};
 use polars::frame::DataFrame;
+use proj::Coord;
 use crate::struct_to_dataframe;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -202,6 +203,7 @@ struct ClosestNode {
 }
 #[derive(Serialize, Deserialize)]
 struct H3NodeMapping {
+    node_id: u64,
     osm_node_id: u64,
     h3_cell_id: String,
 }
@@ -230,11 +232,7 @@ fn write_graph<T: EdgeFilter>(
         let coord = LatLng::new(node.lat, node.long).expect("Coord should always be correct");
         let cell = coord.to_cell(Resolution::Eight);
         let center_coord = LatLng::from(cell);
-        let center_as_node = crate::pbfextractor::pbf::Node {
-            osm_id: 0,
-            lat: center_coord.lat(),
-            long: center_coord.lng(),
-        };
+        let center_as_node = crate::pbfextractor::pbf::Node::from_xy(center_coord.lat(), center_coord.lng());
         let dist: Meters = Distance_
             .calc(&node, &center_as_node, &l.proj_to_m)
             .expect("should be a valid distance");
@@ -260,10 +258,10 @@ fn write_graph<T: EdgeFilter>(
         }
     }
     parquet_writer = polars_io::parquet::write::ParquetWriter::new(node_writer);
-    let mut df_nodes = struct_to_dataframe!(nodes, [osm_id, lat, long]).unwrap();
+    let mut df_nodes = struct_to_dataframe!(nodes, [osm_id, id, lat, long]).unwrap();
     parquet_writer.finish(&mut df_nodes).unwrap();
     parquet_writer = polars_io::parquet::write::ParquetWriter::new(mapping_writer);
-    let mut df_mapping = struct_to_dataframe!(h3_mapping.iter().map(|(key, value)| H3NodeMapping{osm_node_id: value.node.osm_id, h3_cell_id: key.clone()}).collect::<Vec<H3NodeMapping>>(), [osm_node_id, h3_cell_id]).unwrap();
+    let mut df_mapping = struct_to_dataframe!(h3_mapping.iter().map(|(key, value)| H3NodeMapping{node_id: value.node.id, osm_node_id: value.node.osm_id, h3_cell_id: key.clone()}).collect::<Vec<H3NodeMapping>>(), [osm_node_id, h3_cell_id]).unwrap();
     parquet_writer.finish(&mut df_mapping).unwrap();
     Ok((df_nodes, df_edges, df_mapping))
 }
