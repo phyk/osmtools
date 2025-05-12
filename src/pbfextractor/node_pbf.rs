@@ -1,3 +1,4 @@
+use super::pbf::NodeId;
 use super::pbf::{Latitude, LoaderBuildError, Longitude, OsmNodeId};
 use geo::{Contains, Polygon};
 use kiddo::ImmutableKdTree;
@@ -39,6 +40,7 @@ pub struct Poi {
     pub lat: Latitude,
     pub long: Longitude,
     pub nearest_osm_node: OsmNodeId,
+    pub nearest_node_id: NodeId,
     pub dist_to_nearest: f64,
     pub poi_type: PoiType,
 }
@@ -49,6 +51,7 @@ impl Poi {
         lat: Latitude,
         long: Longitude,
         nearest_osm_node: OsmNodeId,
+        nearest_node_id: NodeId,
         dist_to_nearest: f64,
         poi_type: PoiType,
     ) -> Poi {
@@ -57,6 +60,7 @@ impl Poi {
             lat,
             long,
             nearest_osm_node,
+            nearest_node_id,
             dist_to_nearest,
             poi_type,
         }
@@ -199,6 +203,7 @@ impl PoiLoader {
                                 lat,
                                 lng,
                                 osm_nearest_node.osm_id,
+                                osm_nearest_node.id,
                                 nearest_node.distance.sqrt(),
                                 v,
                             )),
