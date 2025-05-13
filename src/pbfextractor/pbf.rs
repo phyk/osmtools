@@ -201,7 +201,7 @@ impl<Filter: EdgeFilter> Loader<Filter> {
             let mut edges_replace: Vec<Edge> = vec![];
             let num_edges = edges.len();
             for edge in edges {
-                if map.contains_key(&edge.source) & map.contains_key(&edge.dest) {
+                if map.contains_key(&edge.source_osm) & map.contains_key(&edge.dest_osm) {
                     edges_replace.push(edge);
                 }
             }
@@ -253,10 +253,10 @@ impl<Filter: EdgeFilter> Loader<Filter> {
         }
         for (index, node) in w.nodes[0..(w.nodes.len() - 1)].iter().enumerate() {
             id_sender.send(*node).expect("could not send id to id set");
-            let edge = Edge::new(node.0 as NodeId, w.nodes[index + 1].0 as NodeId);
+            let edge = Edge::new(node.0 as OsmNodeId, w.nodes[index + 1].0 as OsmNodeId);
             edges.push(edge);
             if !is_one_way {
-                let edge = Edge::new(w.nodes[index + 1].0 as NodeId, node.0 as NodeId);
+                let edge = Edge::new(w.nodes[index + 1].0 as OsmNodeId, node.0 as OsmNodeId);
                 edges.push(edge);
             }
         }
@@ -283,16 +283,11 @@ impl<Filter: EdgeFilter> Loader<Filter> {
     }
 
     fn rename_node_ids_and_calculate_node_metrics(&self, nodes: &mut [Node], edges: &mut [Edge]) {
-        for (id, node) in nodes.iter_mut().enumerate(){
-            node.id = id.try_into().unwrap();
-        }
         let map: HashMap<OsmNodeId, &Node> =
             nodes.iter().map(|n| (n.osm_id, n)).collect();
         for e in edges.iter_mut() {
             let source = map[&e.source_osm];
             let dest = map[&e.dest_osm];
-            e.source = source.id;
-            e.dest = dest.id;
 
             e.length = Distance_
                 .calc(source, dest, &self.proj_to_m)
@@ -302,9 +297,9 @@ impl<Filter: EdgeFilter> Loader<Filter> {
 
     fn delete_duplicate_edges(&self, edges: &mut Vec<Edge>) {
         edges.sort_by(|e1, e2| {
-            let mut result = e1.source.cmp(&e2.source);
+            let mut result = e1.source_osm.cmp(&e2.source_osm);
             if result == Ordering::Equal {
-                result = e1.dest.cmp(&e2.dest);
+                result = e1.dest_osm.cmp(&e2.dest_osm);
             }
             if result == Ordering::Equal {
                 result = e1
@@ -322,7 +317,7 @@ impl<Filter: EdgeFilter> Loader<Filter> {
         for i in 1..edges.len() {
             let first = &edges[i - 1];
             let second = &edges[i];
-            if !(first.source == second.source && first.dest == second.dest) {
+            if !(first.source_osm == second.source_osm && first.dest_osm == second.dest_osm) {
                 continue;
             }
             if first.length <= second.length {
@@ -338,7 +333,6 @@ impl<Filter: EdgeFilter> Loader<Filter> {
     }
 }
 
-pub type NodeId = u64;
 pub type OsmNodeId = u64;
 pub type Latitude = f64;
 pub type Longitude = f64;
@@ -346,7 +340,6 @@ pub type Longitude = f64;
 #[derive(serde::Serialize, serde::Deserialize, Clone, Copy)]
 pub struct Node {
     pub osm_id: OsmNodeId,
-    pub id: NodeId,
     pub lat: Latitude,
     pub long: Longitude,
 }
@@ -362,7 +355,6 @@ impl Coord<f64> for Node {
 
     fn from_xy(x: f64, y: f64) -> Self {
         Self {
-            id: 0,
             osm_id: 0,
             long: x,
             lat: y,
@@ -372,27 +364,23 @@ impl Coord<f64> for Node {
 
 impl Node {
     pub fn new(osm_id: OsmNodeId, lat: Latitude, long: Longitude) -> Node {
-        Node { id: osm_id, osm_id, lat, long }
+        Node { osm_id, lat, long }
     }
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct Edge {
-    pub source: NodeId,
     pub source_osm: OsmNodeId,
-    pub dest: NodeId,
     pub dest_osm: OsmNodeId,
     pub length: f64,
 }
 
 impl Edge {
-    pub fn new(source: NodeId, dest: NodeId) -> Edge {
+    pub fn new(source_osm: OsmNodeId, dest_osm: OsmNodeId) -> Edge {
         let dist = -1.0;
         Edge {
-            source,
-            source_osm: source,
-            dest,
-            dest_osm: dest,
+            source_osm,
+            dest_osm,
             length: dist,
         }
     }
@@ -400,6 +388,6 @@ impl Edge {
 
 impl PartialEq for Edge {
     fn eq(&self, rhs: &Self) -> bool {
-        self.source == rhs.source && self.dest == rhs.dest && self.length == rhs.length
+        self.source_osm == rhs.source_osm && self.dest_osm == rhs.dest_osm && self.length == rhs.length
     }
 }
