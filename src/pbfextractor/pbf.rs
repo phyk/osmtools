@@ -195,22 +195,17 @@ impl<Filter: EdgeFilter> Loader<Filter> {
 
         info!("Collected {} nodes", nodes.len());
         if self.filter_geometry.is_some() {
-            info!("Filtered {} nodes", skipped_nodes);
+            info!("Filtering nodes and edges based on geometry");
             let map: HashMap<OsmNodeId, (usize, &Node)> =
                 nodes.iter().enumerate().map(|n| (n.1.osm_id, n)).collect();
             let mut edges_replace: Vec<Edge> = vec![];
-            let num_edges = edges.len();
             for edge in edges {
                 if map.contains_key(&edge.source_osm) & map.contains_key(&edge.dest_osm) {
                     edges_replace.push(edge);
                 }
             }
-            info!("Filtered {} edges", num_edges - edges_replace.len());
             edges = edges_replace;
         }
-        info!("Num Edges {}", edges.len());
-
-        info!("Calculating Metrics");
 
         self.rename_node_ids_and_calculate_node_metrics(&mut nodes, &mut edges);
 
@@ -218,8 +213,6 @@ impl<Filter: EdgeFilter> Loader<Filter> {
 
         self.delete_duplicate_edges(&mut edges);
         edges = self.delete_dominated_edges(edges);
-
-        info!("{} edges left", edges.len());
         (nodes, edges)
     }
 

@@ -23,24 +23,13 @@ pub struct PoiLoader {
 }
 
 #[derive(Debug, Serialize)]
-pub enum PoiType {
-    Grocery,
-    Education,
-    Health,
-    Banks,
-    Parks,
-    Sustenance,
-    Shops,
-}
-
-#[derive(Debug, Serialize)]
 pub struct Poi {
     pub osm_id: OsmNodeId,
     pub lat: Latitude,
     pub long: Longitude,
     pub nearest_osm_node: OsmNodeId,
     pub dist_to_nearest: f64,
-    pub poi_type: PoiType,
+    pub poi_type: String,
 }
 
 impl Poi {
@@ -50,7 +39,7 @@ impl Poi {
         long: Longitude,
         nearest_osm_node: OsmNodeId,
         dist_to_nearest: f64,
-        poi_type: PoiType,
+        poi_type: String,
     ) -> Poi {
         Poi {
             osm_id,
@@ -160,7 +149,7 @@ impl PoiLoader {
     /// Loads the graph from a pbf file.
     pub fn load_graph(&self) -> Vec<Poi> {
         info!(
-            "Extracting data out of: {}",
+            "Extracting POIs out of: {}",
             self.pbf_path
                 .to_str()
                 .expect("Path could not be converted to string")
@@ -422,40 +411,40 @@ const SHOPS_QUERY: &[(&str, &str)] = &[
     ("shop", "outpost"),
 ];
 
-fn identify_type(n: &Node) -> Option<PoiType> {
+fn identify_type(n: &Node) -> Option<String> {
     let is_park = PARKS_ATTRIBUTES.iter().any(|(k, v)| n.tags.contains(k, v));
     if is_park {
-        return Some(PoiType::Parks);
+        return Some("Parks".into());
     }
     let is_bank = BANKS_ATTRIBUTES.iter().any(|(k, v)| n.tags.contains(k, v));
     if is_bank {
-        return Some(PoiType::Banks);
+        return Some("Banks".into());
     }
     let is_health = HEALTH_ATTRIBUTES.iter().any(|(k, v)| n.tags.contains(k, v));
     if is_health {
-        return Some(PoiType::Health);
+        return Some("Health".into());
     }
     let is_education = EDUCATION_ATTRIBUTES
         .iter()
         .any(|(k, v)| n.tags.contains(k, v));
     if is_education {
-        return Some(PoiType::Education);
+        return Some("Education".into());
     }
     let is_sustenance = SUSTENANCE_ATTRIBUTES
         .iter()
         .any(|(k, v)| n.tags.contains(k, v));
     if is_sustenance {
-        return Some(PoiType::Sustenance);
+        return Some("Sustenance".into());
     }
     let is_grocery = GROCERY_ATTRIBUTES
         .iter()
         .any(|(k, v)| n.tags.contains(k, v));
     if is_grocery {
-        return Some(PoiType::Grocery);
+        return Some("Grocery".into());
     }
     let is_shop = SHOPS_QUERY.iter().any(|(k, v)| n.tags.contains(k, v));
     if is_shop {
-        return Some(PoiType::Shops);
+        return Some("Shops".into());
     }
     None
 }

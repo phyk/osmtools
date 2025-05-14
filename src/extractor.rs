@@ -6,6 +6,7 @@ use crate::pbfextractor::pbf::{Loader, OsmLoaderBuilder, OsmNodeId};
 use crate::pbfextractor::units::Meters;
 use geo::{LineString, Polygon};
 use h3o::{LatLng, Resolution};
+use log::info;
 use polars::frame::DataFrame;
 use proj::Coord;
 use crate::struct_to_dataframe;
@@ -100,7 +101,7 @@ pub fn _load_osm_pois(
     let node_writer = BufWriter::new(output_file_nodes);
 
     let parquet_writer = polars_io::parquet::write::ParquetWriter::new(node_writer);
-    let mut df = struct_to_dataframe!(nodes, [osm_id, lat, long, nearest_osm_node, dist_to_nearest]).unwrap();
+    let mut df = struct_to_dataframe!(nodes, [osm_id, lat, long, nearest_osm_node, dist_to_nearest, poi_type]).unwrap();
     parquet_writer.finish(&mut df).unwrap();
     df
 }
@@ -222,6 +223,8 @@ fn write_graph<T: EdgeFilter>(
 
     let (nodes, edges) = l.load_graph();
 
+    info!("Writing edges to {}", outpath_edges);
+
     let mut parquet_writer = polars_io::parquet::write::ParquetWriter::new(edge_writer);
     let mut df_edges: polars::prelude::DataFrame = struct_to_dataframe!(edges, [source_osm, dest_osm, length]).unwrap();
     parquet_writer.finish(&mut df_edges).unwrap();
@@ -256,6 +259,7 @@ fn write_graph<T: EdgeFilter>(
             );
         }
     }
+    info!("Writing nodes to {}", outpath_nodes);
     parquet_writer = polars_io::parquet::write::ParquetWriter::new(node_writer);
     let mut df_nodes = struct_to_dataframe!(nodes, [osm_id, lat, long]).unwrap();
     parquet_writer.finish(&mut df_nodes).unwrap();
