@@ -15,13 +15,13 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-use super::pbf::{Node, MetricIndices};
+use super::pbf::{MetricIndices, Node};
 use super::units::*;
 
 use geo::{Distance, Euclidean};
 use geo_types::Point;
 use osmpbfreader::Tags;
-use proj::{Coord, Proj};
+use proj4rs::proj;
 use smartstring::{LazyCompact, SmartString};
 
 use std::rc::Rc;
@@ -53,7 +53,7 @@ pub trait TagMetric<T>: Metric {
 }
 
 pub trait NodeMetric<T>: Metric {
-    fn calc(&self, source: &Node, target: &Node, proj_to_m: &Proj) -> MetricResult<T>;
+    fn calc(&self, source: &Node, target: &Node, from_crs: u16, to_crs: u16) -> MetricResult<T>;
 }
 
 pub trait CostMetric<T>: Metric {
@@ -98,12 +98,20 @@ pub struct Distance_;
 metric!(Distance_);
 
 impl NodeMetric<Meters> for Distance_ {
-    fn calc(&self, source: &Node, target: &Node, proj_to_m: &Proj) -> MetricResult<Meters> {
-        let source_point = Point::from_xy(source.x(), source.y());
-        let target_point = Point::from_xy(target.x(), target.y());
-        let source_proj = proj_to_m.convert(source_point).unwrap();
-        let target_proj = proj_to_m.convert(target_point).unwrap();
-        Ok(Meters(Euclidean::distance(source_proj, target_proj)))
+    fn calc(
+        &self,
+        source: &Node,
+        target: &Node,
+        from_crs: u16,
+        target_crs: u16,
+    ) -> MetricResult<Meters> {
+        let src_proj = proj::Proj::from_epsg_code(from_crs).unwrap();
+        let target_proj = proj::Proj::from_epsg_code(target_crs).unwrap();
+        let mut source_point = Point::new(source.long, source.lat).to_radians();
+        let mut target_point = Point::new(target.long, target.lat).to_radians();
+        proj4rs::transform::transform(&src_proj, &target_proj, &mut source_point).unwrap();
+        proj4rs::transform::transform(&src_proj, &target_proj, &mut target_point).unwrap();
+        Ok(Meters(Euclidean.distance(source_point, target_point)))
     }
 }
 
@@ -175,8 +183,8 @@ impl<T> NodeMetric<f64> for T
 where
     T: NodeMetric<Meters>,
 {
-    fn calc(&self, source: &Node, target: &Node, proj_to_m: &Proj) -> MetricResult<f64> {
-        NodeMetric::<Meters>::calc(self, source, target, proj_to_m).map(|c| c.0)
+    fn calc(&self, source: &Node, target: &Node, from_crs: u16, to_crs: u16) -> MetricResult<f64> {
+        NodeMetric::<Meters>::calc(self, source, target, from_crs, to_crs).map(|c| c.0)
     }
 }
 
@@ -329,22 +337,22 @@ impl EdgeFilter for BicycleEdgeFilter {
         matches!(
             street_type,
             Some("motorway")
-            | Some("steps")
-            | Some("corridor")
-            | Some("elevator")
-            | Some("escalator")
-            | Some("motor")
-            | Some("proposed")
-            | Some("abandoned")
-            | Some("platform")
-            | Some("raceway")
-            | Some("motorway_link")
-            | Some("trunk")
-            | Some("trunk_link")
-            | Some("rest_area")
-            | Some("construction")
-            | Some("service")
-            | None
+                | Some("steps")
+                | Some("corridor")
+                | Some("elevator")
+                | Some("escalator")
+                | Some("motor")
+                | Some("proposed")
+                | Some("abandoned")
+                | Some("platform")
+                | Some("raceway")
+                | Some("motorway_link")
+                | Some("trunk")
+                | Some("trunk_link")
+                | Some("rest_area")
+                | Some("construction")
+                | Some("service")
+                | None
         )
     }
 }
@@ -372,16 +380,16 @@ impl EdgeFilter for WalkingEdgeFilter {
         matches!(
             street_type,
             Some("motorway")
-            | Some("motorway_link")
-            | Some("motor")
-            | Some("proposed")
-            | Some("construction")
-            | Some("abandoned")
-            | Some("platform")
-            | Some("raceway")
-            | Some("trunk")
-            | Some("trunk_link")
-            | None
+                | Some("motorway_link")
+                | Some("motor")
+                | Some("proposed")
+                | Some("construction")
+                | Some("abandoned")
+                | Some("platform")
+                | Some("raceway")
+                | Some("trunk")
+                | Some("trunk_link")
+                | None
         )
     }
 }
@@ -395,20 +403,20 @@ impl EdgeFilter for CarEdgeFilter {
         matches!(
             street_type,
             Some("footway")
-            | Some("cycleway")
-            | Some("path")
-            | Some("pedestrian")
-            | Some("steps")
-            | Some("track")
-            | Some("corridor")
-            | Some("elevator")
-            | Some("escalator")
-            | Some("proposed")
-            | Some("construction")
-            | Some("bridleway")
-            | Some("abandoned")
-            | Some("platform")
-            | Some("raceway")
+                | Some("cycleway")
+                | Some("path")
+                | Some("pedestrian")
+                | Some("steps")
+                | Some("track")
+                | Some("corridor")
+                | Some("elevator")
+                | Some("escalator")
+                | Some("proposed")
+                | Some("construction")
+                | Some("bridleway")
+                | Some("abandoned")
+                | Some("platform")
+                | Some("raceway")
                 | Some("rest_area")
                 | Some("service")
                 | None

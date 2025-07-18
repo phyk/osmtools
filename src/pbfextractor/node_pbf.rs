@@ -1,4 +1,5 @@
 use super::pbf::{Latitude, LoaderBuildError, Longitude, OsmNodeId};
+use geo::Point;
 use geo::{Contains, Polygon};
 use kiddo::ImmutableKdTree;
 use kiddo::SquaredEuclidean;
@@ -7,17 +8,18 @@ use log::warn;
 use osmpbfreader::{Node, OsmObj, OsmPbfReader};
 use polars::prelude::DataFrame;
 use polars_io::SerReader;
-use std::iter::zip;
-use proj::{Coord, Proj};
+use proj4rs::Proj;
 use serde::Serialize;
 use std::fs::File;
 use std::io::BufReader;
+use std::iter::zip;
 use std::path::{Path, PathBuf};
 
 pub struct PoiLoader {
     pbf_path: PathBuf,
     filter_geometry: Option<Polygon>,
-    pub proj_to_m: Proj,
+    pub proj_from: Proj,
+    pub proj_to: Proj,
     kdtree: ImmutableKdTree<f64, 2>,
     nodes_to_match: Vec<super::pbf::Node>,
 }
@@ -56,7 +58,7 @@ impl Poi {
 pub struct PoiLoaderBuilder {
     pbf_path: Option<PathBuf>,
     filter_geometry: Option<Polygon>,
-    target_crs: Option<String>,
+    target_crs: Option<u16>,
     nodes_to_match: Option<Vec<super::pbf::Node>>,
 }
 
@@ -77,7 +79,7 @@ impl PoiLoaderBuilder {
         new.filter_geometry = Some(value.into());
         new
     }
-    pub fn target_crs<VALUE: Into<String>>(&mut self, value: VALUE) -> &mut Self {
+    pub fn target_crs<VALUE: Into<u16>>(&mut self, value: VALUE) -> &mut Self {
         let new = self;
         new.target_crs = Some(value.into());
         new
@@ -95,7 +97,8 @@ impl PoiLoaderBuilder {
         return match File::open(value.into()) {
             Ok(file) => {
                 let node_reader = BufReader::new(file);
-                let reader = polars_io::parquet::read::ParquetReader::new(node_reader).read_parallel(polars::prelude::ParallelStrategy::Auto);
+                let reader = polars_io::parquet::read::ParquetReader::new(node_reader)
+                    .read_parallel(polars::prelude::ParallelStrategy::Auto);
                 let df = reader.finish().unwrap();
                 new.nodes_to_match_polars(df)
             }
@@ -109,9 +112,29 @@ impl PoiLoaderBuilder {
     pub fn nodes_to_match_polars(&mut self, df: DataFrame) -> &mut Self {
         let new = self;
         new.nodes_to_match = Some(
-            zip(df.column("osm_id").unwrap().u64().expect("wrong dtype on osm id").into_iter(), zip(df.column("lat").unwrap().f64().expect("Lat has wrong dtype").into_iter(), df.column("long").unwrap().f64().expect("Long has wrong dtype").into_iter())).map(
-                |(osm_id, (lat, long))| super::pbf::Node::new(osm_id.unwrap(), lat.unwrap(), long.unwrap())
-            ).collect()
+            zip(
+                df.column("osm_id")
+                    .unwrap()
+                    .u64()
+                    .expect("wrong dtype on osm id")
+                    .into_iter(),
+                zip(
+                    df.column("lat")
+                        .unwrap()
+                        .f64()
+                        .expect("Lat has wrong dtype")
+                        .into_iter(),
+                    df.column("long")
+                        .unwrap()
+                        .f64()
+                        .expect("Long has wrong dtype")
+                        .into_iter(),
+                ),
+            )
+            .map(|(osm_id, (lat, long))| {
+                super::pbf::Node::new(osm_id.unwrap(), lat.unwrap(), long.unwrap())
+            })
+            .collect(),
         );
         new
     }
@@ -120,17 +143,24 @@ impl PoiLoaderBuilder {
             .target_crs
             .as_ref()
             .expect("Requires CRS to be set for any calculation");
-        let proj_to_m = Proj::new_known_crs("EPSG:4326", &target_crs, None)
-            .expect("Error in creation of Projection");
+        let source_crs = 4326;
+
         let nodes_to_match = match &self.nodes_to_match {
             Some(value) => value,
             None => panic!("Nodes are necessary for matching"),
         };
-        let nodes_projected: Vec<[f64; 2]> = nodes_to_match
+        let mut nodes_projected: Vec<Point> = nodes_to_match
             .iter()
-            .map(|n| proj_to_m.convert((n.x(), n.y())).unwrap().into())
+            .map(|n| Point::new(n.long, n.lat).to_radians())
             .collect();
-        let kdtree = ImmutableKdTree::new_from_slice(&nodes_projected);
+        let proj_from = proj4rs::Proj::from_epsg_code(source_crs).unwrap();
+        let proj_to = proj4rs::Proj::from_epsg_code(*target_crs).unwrap();
+        nodes_projected
+            .iter_mut()
+            .for_each(|x| proj4rs::transform::transform(&proj_from, &proj_to, x).unwrap());
+        let nodes_projected_arr: Vec<[f64; 2]> =
+            nodes_projected.iter().map(|p| [p.x(), p.y()]).collect();
+        let kdtree = ImmutableKdTree::new_from_slice(&nodes_projected_arr);
 
         Ok(PoiLoader {
             pbf_path: match self.pbf_path {
@@ -138,7 +168,8 @@ impl PoiLoaderBuilder {
                 None => return Err(LoaderBuildError::new("pbf_path".into())),
             },
             filter_geometry: Clone::clone(&self.filter_geometry),
-            proj_to_m,
+            proj_from,
+            proj_to,
             nodes_to_match: nodes_to_match.to_owned(),
             kdtree,
         })
@@ -165,11 +196,12 @@ impl PoiLoader {
                 if let Ok(OsmObj::Node(n)) = obj {
                     let lat = f64::from(n.decimicro_lat) / 10_000_000.0;
                     let lng = f64::from(n.decimicro_lon) / 10_000_000.0;
-                    let point = geo::Point::new(lng, lat);
-                    let point_convert = self.proj_to_m.convert(point).unwrap();
+                    let mut point = geo::Point::new(lng, lat).to_radians();
+                    proj4rs::transform::transform(&self.proj_from, &self.proj_to, &mut point)
+                        .unwrap();
                     let nearest_node = self
                         .kdtree
-                        .nearest_one::<SquaredEuclidean>(&[point_convert.x(), point_convert.y()]);
+                        .nearest_one::<SquaredEuclidean>(&[point.x(), point.y()]);
                     let osm_nearest_node: &super::pbf::Node = self
                         .nodes_to_match
                         .get::<usize>(nearest_node.item as usize)

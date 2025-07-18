@@ -4,12 +4,11 @@ use crate::pbfextractor::metrics::{
 use crate::pbfextractor::node_pbf::PoiLoaderBuilder;
 use crate::pbfextractor::pbf::{Loader, OsmLoaderBuilder, OsmNodeId};
 use crate::pbfextractor::units::Meters;
+use crate::struct_to_dataframe;
 use geo::{LineString, Polygon};
 use h3o::{LatLng, Resolution};
 use log::info;
 use polars::frame::DataFrame;
-use proj::Coord;
-use crate::struct_to_dataframe;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
@@ -81,19 +80,23 @@ pub fn _load_osm_pois(
     // Search nearest neighbor in loop in PoiLoader
     let mut osm_loader_builder = PoiLoaderBuilder::default();
 
-    osm_loader_builder.target_crs("EPSG:4839")
+    osm_loader_builder
+        .target_crs(4839u16)
         .filter_geometry(bounding_box)
         .pbf_path(pbf_path);
     match nodes_to_match_df {
-        Some(df) => {osm_loader_builder.nodes_to_match_polars(df.clone());},
+        Some(df) => {
+            osm_loader_builder.nodes_to_match_polars(df.clone());
+        }
         _ => (),
     }
     match nodes_to_match_path {
-        Some(path) => {osm_loader_builder.nodes_to_match_parquet(path);},
-        None => ()
+        Some(path) => {
+            osm_loader_builder.nodes_to_match_parquet(path);
+        }
+        None => (),
     }
-    let osm_loader = osm_loader_builder.build()
-        .expect("Parameter missing");
+    let osm_loader = osm_loader_builder.build().expect("Parameter missing");
     let outpath_nodes = get_node_outpath(outpath, city_name, "pois");
 
     let nodes = osm_loader.load_graph();
@@ -101,7 +104,18 @@ pub fn _load_osm_pois(
     let node_writer = BufWriter::new(output_file_nodes);
 
     let parquet_writer = polars_io::parquet::write::ParquetWriter::new(node_writer);
-    let mut df = struct_to_dataframe!(nodes, [osm_id, lat, long, nearest_osm_node, dist_to_nearest, poi_type]).unwrap();
+    let mut df = struct_to_dataframe!(
+        nodes,
+        [
+            osm_id,
+            lat,
+            long,
+            nearest_osm_node,
+            dist_to_nearest,
+            poi_type
+        ]
+    )
+    .unwrap();
     parquet_writer.finish(&mut df).unwrap();
     df
 }
@@ -118,7 +132,7 @@ pub fn _load_osm_walking(
         .expect("Download failed or Path not existing");
     let osm_loader: Loader<WalkingEdgeFilter> = OsmLoaderBuilder::default()
         .edge_filter(WalkingEdgeFilter)
-        .target_crs("EPSG:4839")
+        .target_crs(4839u16)
         .filter_geometry(bounding_box)
         .pbf_path(pbf_path)
         .reverse_edges(true)
@@ -150,7 +164,7 @@ pub fn _load_osm_cycling(
         .expect("Download failed or Path not existing");
     let osm_loader: Loader<BicycleEdgeFilter> = OsmLoaderBuilder::default()
         .edge_filter(BicycleEdgeFilter)
-        .target_crs("EPSG:4839")
+        .target_crs(4839u16)
         .filter_geometry(bounding_box)
         .pbf_path(pbf_path)
         .reverse_edges(*reverse_edges)
@@ -180,7 +194,7 @@ pub fn _load_osm_driving(
         .expect("Download failed or Path not existing");
     let osm_loader: Loader<CarEdgeFilter> = OsmLoaderBuilder::default()
         .edge_filter(CarEdgeFilter)
-        .target_crs("EPSG:4839")
+        .target_crs(4839u16)
         .filter_geometry(bounding_box)
         .pbf_path(pbf_path)
         .build()
@@ -226,7 +240,8 @@ fn write_graph<T: EdgeFilter>(
     info!("Writing edges to {}", outpath_edges);
 
     let mut parquet_writer = polars_io::parquet::write::ParquetWriter::new(edge_writer);
-    let mut df_edges: polars::prelude::DataFrame = struct_to_dataframe!(edges, [source_osm, dest_osm, length]).unwrap();
+    let mut df_edges: polars::prelude::DataFrame =
+        struct_to_dataframe!(edges, [source_osm, dest_osm, length]).unwrap();
     parquet_writer.finish(&mut df_edges).unwrap();
 
     let mut h3_mapping = HashMap::new();
@@ -234,9 +249,10 @@ fn write_graph<T: EdgeFilter>(
         let coord = LatLng::new(node.lat, node.long).expect("Coord should always be correct");
         let cell = coord.to_cell(Resolution::Eight);
         let center_coord = LatLng::from(cell);
-        let center_as_node = crate::pbfextractor::pbf::Node::from_xy(center_coord.lat(), center_coord.lng());
+        let center_as_node =
+            crate::pbfextractor::pbf::Node::new(0, center_coord.lat(), center_coord.lng());
         let dist: Meters = Distance_
-            .calc(&node, &center_as_node, &l.proj_to_m)
+            .calc(&node, &center_as_node, l.source_crs, l.target_crs)
             .expect("should be a valid distance");
         if h3_mapping.contains_key(&cell.to_string()) {
             let current_value: &ClosestNode = h3_mapping.get(&cell.to_string()).unwrap();
@@ -264,7 +280,17 @@ fn write_graph<T: EdgeFilter>(
     let mut df_nodes = struct_to_dataframe!(nodes, [osm_id, lat, long]).unwrap();
     parquet_writer.finish(&mut df_nodes).unwrap();
     parquet_writer = polars_io::parquet::write::ParquetWriter::new(mapping_writer);
-    let mut df_mapping = struct_to_dataframe!(h3_mapping.iter().map(|(key, value)| H3NodeMapping{ osm_node_id: value.node.osm_id, h3_cell_id: key.clone()}).collect::<Vec<H3NodeMapping>>(), [osm_node_id, h3_cell_id]).unwrap();
+    let mut df_mapping = struct_to_dataframe!(
+        h3_mapping
+            .iter()
+            .map(|(key, value)| H3NodeMapping {
+                osm_node_id: value.node.osm_id,
+                h3_cell_id: key.clone()
+            })
+            .collect::<Vec<H3NodeMapping>>(),
+        [osm_node_id, h3_cell_id]
+    )
+    .unwrap();
     parquet_writer.finish(&mut df_mapping).unwrap();
     Ok((df_nodes, df_edges, df_mapping))
 }

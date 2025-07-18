@@ -17,11 +17,10 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 use osmpbfreader::{OsmObj, OsmPbfReader, Way};
-use proj::Coord;
+use proj4rs::transform::{Transform, TransformClosure};
 
 use super::metrics::{Distance_, EdgeFilter, NodeMetric};
 use log::info;
-use proj::Proj;
 use std::cmp::Ordering;
 use std::collections::hash_map::HashMap;
 use std::collections::{BTreeMap, HashSet};
@@ -54,7 +53,8 @@ pub struct Loader<Filter: EdgeFilter> {
     pbf_path: PathBuf,
     edge_filter: Filter,
     filter_geometry: Option<Polygon>,
-    pub proj_to_m: Proj,
+    pub source_crs: u16,
+    pub target_crs: u16,
     reverse_edges: bool,
 }
 
@@ -63,7 +63,7 @@ pub struct OsmLoaderBuilder<Filter: EdgeFilter> {
     pbf_path: Option<PathBuf>,
     edge_filter: Option<Filter>,
     filter_geometry: Option<Polygon>,
-    target_crs: Option<String>,
+    target_crs: Option<u16>,
     reverse_edges: Option<bool>,
 }
 
@@ -89,7 +89,7 @@ impl<Filter: EdgeFilter> OsmLoaderBuilder<Filter> {
         new.filter_geometry = Some(value.into());
         new
     }
-    pub fn target_crs<VALUE: Into<String>>(&mut self, value: VALUE) -> &mut Self {
+    pub fn target_crs<VALUE: Into<u16>>(&mut self, value: VALUE) -> &mut Self {
         let new = self;
         new.target_crs = Some(value.into());
         new
@@ -104,8 +104,7 @@ impl<Filter: EdgeFilter> OsmLoaderBuilder<Filter> {
             .target_crs
             .as_ref()
             .expect("Requires CRS to be set for any calculation");
-        let proj_to_m = Proj::new_known_crs("EPSG:4326", &target_crs, None)
-            .expect("Error in creation of Projection");
+        let source_crs = 4839;
         Ok(Loader {
             pbf_path: match self.pbf_path {
                 Some(ref value) => Clone::clone(value),
@@ -124,7 +123,8 @@ impl<Filter: EdgeFilter> OsmLoaderBuilder<Filter> {
                 }
             },
             filter_geometry: Clone::clone(&self.filter_geometry),
-            proj_to_m: proj_to_m,
+            source_crs,
+            target_crs: target_crs.clone(),
             reverse_edges: match self.reverse_edges {
                 Some(ref value) => Clone::clone(value),
                 None => false,
@@ -276,14 +276,13 @@ impl<Filter: EdgeFilter> Loader<Filter> {
     }
 
     fn rename_node_ids_and_calculate_node_metrics(&self, nodes: &mut [Node], edges: &mut [Edge]) {
-        let map: HashMap<OsmNodeId, &Node> =
-            nodes.iter().map(|n| (n.osm_id, n)).collect();
+        let map: HashMap<OsmNodeId, &Node> = nodes.iter().map(|n| (n.osm_id, n)).collect();
         for e in edges.iter_mut() {
             let source = map[&e.source_osm];
             let dest = map[&e.dest_osm];
 
             e.length = Distance_
-                .calc(source, dest, &self.proj_to_m)
+                .calc(source, dest, self.source_crs, self.target_crs)
                 .expect("Cannot calculate distance");
         }
     }
@@ -337,21 +336,15 @@ pub struct Node {
     pub long: Longitude,
 }
 
-impl Coord<f64> for Node {
-    fn x(&self) -> f64 {
-        self.long
-    }
-
-    fn y(&self) -> f64 {
-        self.lat
-    }
-
-    fn from_xy(x: f64, y: f64) -> Self {
-        Self {
-            osm_id: 0,
-            long: x,
-            lat: y,
-        }
+impl Transform for Node {
+    fn transform_coordinates<F: TransformClosure>(
+        &mut self,
+        f: &mut F,
+    ) -> proj4rs::errors::Result<()> {
+        f(self.long, self.lat, 0.0).map(|(x, y, _)| {
+            self.long = x;
+            self.lat = y;
+        })
     }
 }
 
@@ -381,6 +374,8 @@ impl Edge {
 
 impl PartialEq for Edge {
     fn eq(&self, rhs: &Self) -> bool {
-        self.source_osm == rhs.source_osm && self.dest_osm == rhs.dest_osm && self.length == rhs.length
+        self.source_osm == rhs.source_osm
+            && self.dest_osm == rhs.dest_osm
+            && self.length == rhs.length
     }
 }
