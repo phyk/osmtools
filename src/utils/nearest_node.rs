@@ -56,13 +56,13 @@ mod tests {
         let add_df = df![
             "lat" => [0.0, 1.0, 2.0],
             "long" => [0.0, 0.0, 0.0],
-            "osm_id" => [1, 2, 3]
+            "osm_id" => [1u64, 2u64, 3u64]
         ]
         .unwrap();
         let target_df = df![
             "lat" => [0.0],
             "long" => [0.0],
-            "osm_id" => [0]
+            "osm_id" => [0u64]
         ]
         .unwrap();
         let result = add_nearest_node_to_geo_df(target_df.clone(), &add_df, "EPSG:4326");
