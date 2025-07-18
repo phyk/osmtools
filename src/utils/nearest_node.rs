@@ -8,10 +8,10 @@ use proj4rs;
 pub fn add_nearest_node_to_geo_df<'a>(
     geo_df: DataFrame,
     nodes_to_match: &DataFrame,
-    target_crs: &u16,
+    target_crs: u16,
 ) -> Result<DataFrame, Box<dyn error::Error>> {
     let proj_from = proj4rs::Proj::from_epsg_code(4326)?;
-    let proj_to = proj4rs::Proj::from_epsg_code(*target_crs)?;
+    let proj_to = proj4rs::Proj::from_epsg_code(target_crs)?;
     let mut nodes: Vec<Point> = nodes_to_match
         .column("lat")?
         .f64()?
