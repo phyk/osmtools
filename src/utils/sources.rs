@@ -291,38 +291,43 @@ pub fn get_bbbike_source(city_name: &String) -> Result<(String, String), SourceN
     }
 }
 
-#[test]
-fn test_for_existing_city() -> Result<(), SourceNotFoundError> {
-    let existing_city = "Zuerich";
-    assert_eq!(
-        get_bbbike_source(&existing_city.into())?,
-        (
-            "zuerich.osm.pbf".into(),
-            "https://download.bbbike.org/osm/bbbike/Zuerich/Zuerich.osm.pbf".into()
-        )
-    );
-    Ok(())
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[test]
-fn test_for_nonexistant_city() {
-    let nonexistant_city = "Hogwarts";
-    let result = get_bbbike_source(&nonexistant_city.into()).err();
-    assert_eq!(
-        result,
-        Some(SourceNotFoundError::new(nonexistant_city.into()))
-    );
-}
+    #[test]
+    fn test_for_existing_city() -> Result<(), SourceNotFoundError> {
+        let existing_city = "Zuerich";
+        assert_eq!(
+            get_bbbike_source(&existing_city.into())?,
+            (
+                "zuerich.osm.pbf".into(),
+                "https://download.bbbike.org/osm/bbbike/Zuerich/Zuerich.osm.pbf".into()
+            )
+        );
+        Ok(())
+    }
 
-#[test]
-fn test_for_newyorkcity() -> Result<(), SourceNotFoundError> {
-    let existing_city = "NewYorkCity";
-    assert_eq!(
-        get_bbbike_source(&existing_city.into())?,
-        (
-            "newyorkcity.osm.pbf".into(),
-            "https://download.bbbike.org/osm/bbbike/NewYork/NewYork.osm.pbf".into()
-        )
-    );
-    Ok(())
+    #[test]
+    fn test_for_nonexistant_city() {
+        let nonexistant_city = "Hogwarts";
+        let result = get_bbbike_source(&nonexistant_city.into()).err();
+        assert_eq!(
+            result,
+            Some(SourceNotFoundError::new(nonexistant_city.into()))
+        );
+    }
+
+    #[test]
+    fn test_for_newyorkcity() -> Result<(), SourceNotFoundError> {
+        let existing_city = "NewYorkCity";
+        assert_eq!(
+            get_bbbike_source(&existing_city.into())?,
+            (
+                "newyorkcity.osm.pbf".into(),
+                "https://download.bbbike.org/osm/bbbike/NewYork/NewYork.osm.pbf".into()
+            )
+        );
+        Ok(())
+    }
 }
