@@ -294,3 +294,74 @@ fn write_graph<T: EdgeFilter>(
     parquet_writer.finish(&mut df_mapping).unwrap();
     Ok((df_nodes, df_edges, df_mapping))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn integration_test_osm_walking() {
+        let bounding_box = vec![
+            (3.22183, 51.20391),
+            (3.23663, 51.20391),
+            (3.23663, 51.20887),
+            (3.22183, 51.20887),
+            (3.22183, 51.20391),
+        ];
+        let result = _load_osm_walking("Bruegge", bounding_box, "data", "test", false);
+        assert_eq!(result.0.shape(), (0, 0));
+        assert_eq!(result.1.shape(), (0, 0));
+        assert_eq!(result.2.shape(), (0, 0));
+    }
+
+    #[test]
+    fn integration_test_osm_cycling() {
+        let bounding_box = vec![
+            (3.22183, 51.20391),
+            (3.23663, 51.20391),
+            (3.23663, 51.20887),
+            (3.22183, 51.20887),
+            (3.22183, 51.20391),
+        ];
+        let result = _load_osm_cycling("Bruegge", bounding_box, &false, "data", "test", false);
+        assert_eq!(result.0.shape(), (0, 0));
+        assert_eq!(result.1.shape(), (0, 0));
+        assert_eq!(result.2.shape(), (0, 0));
+    }
+
+    #[test]
+    fn integration_test_osm_driving() {
+        let bounding_box = vec![
+            (3.22183, 51.20391),
+            (3.23663, 51.20391),
+            (3.23663, 51.20887),
+            (3.22183, 51.20887),
+            (3.22183, 51.20391),
+        ];
+        let result = _load_osm_driving("Bruegge", bounding_box, "data", "test", false);
+        assert_eq!(result.0.shape(), (0, 0));
+        assert_eq!(result.1.shape(), (0, 0));
+        assert_eq!(result.2.shape(), (0, 0));
+    }
+
+    #[test]
+    fn integration_test_osm_pois() {
+        let bounding_box = vec![
+            (3.22183, 51.20391),
+            (3.23663, 51.20391),
+            (3.23663, 51.20887),
+            (3.22183, 51.20887),
+            (3.22183, 51.20391),
+        ];
+        let result = _load_osm_pois(
+            "Bruegge",
+            bounding_box,
+            "data",
+            Some("test/bruegge_poitest_walking_nodes.parquet"),
+            None,
+            "test",
+            false,
+        );
+        assert_eq!(result.shape(), (0, 0));
+    }
+}

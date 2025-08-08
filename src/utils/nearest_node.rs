@@ -10,7 +10,7 @@ pub fn add_nearest_node_to_geo_df<'a>(
     nodes_to_match: &DataFrame,
     target_crs: u16,
 ) -> Result<DataFrame, Box<dyn error::Error>> {
-    let proj_from = proj4rs::Proj::from_epsg_code(4326)?;
+    let proj_from = proj4rs::Proj::from_epsg_code(4326_u16)?;
     let proj_to = proj4rs::Proj::from_epsg_code(target_crs)?;
     let mut nodes: Vec<Point> = nodes_to_match
         .column("lat")?
@@ -73,7 +73,7 @@ mod tests {
             "osm_id" => [0u64, 10u64]
         ]
         .unwrap();
-        let result = add_nearest_node_to_geo_df(target_df.clone(), &add_df, &4326);
+        let result = add_nearest_node_to_geo_df(target_df.clone(), &add_df, 4326);
         match result {
             Ok(df) => {
                 let join_comp = df
@@ -114,7 +114,7 @@ mod tests {
             "osm_id" => [0u64, 10u64]
         ]
         .unwrap();
-        let result = add_nearest_node_to_geo_df(target_df.clone(), &add_df, &4839);
+        let result = add_nearest_node_to_geo_df(target_df.clone(), &add_df, 4839);
         match result {
             Ok(df) => {
                 let join_comp = df
