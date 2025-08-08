@@ -20,7 +20,7 @@ use osmpbfreader::{OsmObj, OsmPbfReader, Way};
 use proj4rs::transform::{Transform, TransformClosure};
 
 use super::metrics::{Distance_, EdgeFilter, NodeMetric};
-use log::info;
+use log::debug;
 use std::cmp::Ordering;
 use std::collections::hash_map::HashMap;
 use std::collections::{BTreeMap, HashSet};
@@ -137,7 +137,7 @@ impl<Filter: EdgeFilter> OsmLoaderBuilder<Filter> {
 impl<Filter: EdgeFilter> Loader<Filter> {
     /// Loads the graph from a pbf file.
     pub fn load_graph(&self) -> (Vec<Node>, Vec<Edge>) {
-        info!(
+        debug!(
             "Extracting data out of: {}",
             self.pbf_path
                 .to_str()
@@ -159,7 +159,7 @@ impl<Filter: EdgeFilter> Loader<Filter> {
                 }
             })
             .collect();
-        info!("Collected {} edges", edges.len());
+        debug!("Collected {} edges", edges.len());
         reader.rewind().expect("Can't rewind pbf file!");
         drop(id_sender);
 
@@ -193,9 +193,9 @@ impl<Filter: EdgeFilter> Loader<Filter> {
             })
             .collect();
 
-        info!("Collected {} nodes", nodes.len());
+        debug!("Collected {} nodes", nodes.len());
         if self.filter_geometry.is_some() {
-            info!("Filtering nodes and edges based on geometry");
+            debug!("Filtering nodes and edges based on geometry");
             let map: HashMap<OsmNodeId, (usize, &Node)> =
                 nodes.iter().enumerate().map(|n| (n.1.osm_id, n)).collect();
             let mut edges_replace: Vec<Edge> = vec![];
@@ -209,7 +209,7 @@ impl<Filter: EdgeFilter> Loader<Filter> {
 
         self.rename_node_ids_and_calculate_node_metrics(&mut nodes, &mut edges);
 
-        info!("Deleting duplicate and dominated edges");
+        debug!("Deleting duplicate and dominated edges");
 
         self.delete_duplicate_edges(&mut edges);
         edges = self.delete_dominated_edges(edges);

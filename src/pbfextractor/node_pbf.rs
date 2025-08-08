@@ -3,7 +3,7 @@ use geo::Point;
 use geo::{Contains, Polygon};
 use kiddo::ImmutableKdTree;
 use kiddo::SquaredEuclidean;
-use log::info;
+use log::debug;
 use log::warn;
 use osmpbfreader::{Node, OsmObj, OsmPbfReader};
 use polars::prelude::DataFrame;
@@ -179,7 +179,7 @@ impl PoiLoaderBuilder {
 impl PoiLoader {
     /// Loads the graph from a pbf file.
     pub fn load_graph(&self) -> Vec<Poi> {
-        info!(
+        debug!(
             "Extracting POIs out of: {}",
             self.pbf_path
                 .to_str()
@@ -233,8 +233,8 @@ impl PoiLoader {
             })
             .collect();
 
-        info!("Collected {} nodes", nodes.len());
-        info!("Calculating Metrics");
+        debug!("Collected {} nodes", nodes.len());
+        debug!("Calculating Metrics");
 
         nodes
     }
