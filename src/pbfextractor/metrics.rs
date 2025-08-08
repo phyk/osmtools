@@ -94,6 +94,7 @@ fn bounded_speed(tags: &Tags, driver_max: f64) -> MetricResult<KilometersPerHour
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub struct Distance_;
 metric!(Distance_);
 
@@ -421,5 +422,49 @@ impl EdgeFilter for CarEdgeFilter {
                 | Some("service")
                 | None
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::pbfextractor::metrics;
+
+    use super::*;
+
+    #[test]
+    fn test_distance_with_crs() {
+        let source = Node {
+            osm_id: 1,
+            lat: 51.2075825,
+            long: 3.2284262,
+        };
+        let target = Node {
+            osm_id: 2,
+            lat: 51.2076861,
+            long: 3.2286302,
+        };
+        let from_crs = 4326;
+        let to_crs = 4839;
+
+        let dist: Result<metrics::Meters, MetricError> =
+            Distance_.calc(&source, &target, from_crs, to_crs);
+        assert_eq!(dist.unwrap(), Meters(18.315216245523892));
+
+        let source = Node {
+            osm_id: 1,
+            lat: 51.207997,
+            long: 3.22208,
+        };
+        let target = Node {
+            osm_id: 2,
+            lat: 51.208031,
+            long: 3.2220472,
+        };
+        let from_crs = 4326;
+        let to_crs = 4839;
+
+        let dist: Result<metrics::Meters, MetricError> =
+            Distance_.calc(&source, &target, from_crs, to_crs);
+        assert_eq!(dist.unwrap(), Meters(4.418689127008047));
     }
 }

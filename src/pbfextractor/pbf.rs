@@ -104,7 +104,7 @@ impl<Filter: EdgeFilter> OsmLoaderBuilder<Filter> {
             .target_crs
             .as_ref()
             .expect("Requires CRS to be set for any calculation");
-        let source_crs = 4839;
+        let source_crs = 4326;
         Ok(Loader {
             pbf_path: match self.pbf_path {
                 Some(ref value) => Clone::clone(value),
@@ -284,6 +284,9 @@ impl<Filter: EdgeFilter> Loader<Filter> {
             e.length = Distance_
                 .calc(source, dest, self.source_crs, self.target_crs)
                 .expect("Cannot calculate distance");
+            if e.length < 1.0 {
+                println!("{:?} - {:?} len {:?}", source, dest, e.length);
+            }
         }
     }
 
@@ -329,7 +332,7 @@ pub type OsmNodeId = u64;
 pub type Latitude = f64;
 pub type Longitude = f64;
 
-#[derive(serde::Serialize, serde::Deserialize, Clone, Copy)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug)]
 pub struct Node {
     pub osm_id: OsmNodeId,
     pub lat: Latitude,
