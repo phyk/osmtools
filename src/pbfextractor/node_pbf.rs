@@ -196,24 +196,25 @@ impl PoiLoader {
                 if let Ok(OsmObj::Node(n)) = obj {
                     let lat = f64::from(n.decimicro_lat) / 10_000_000.0;
                     let lng = f64::from(n.decimicro_lon) / 10_000_000.0;
-                    let mut point = geo::Point::new(lng, lat).to_radians();
-                    proj4rs::transform::transform(&self.proj_from, &self.proj_to, &mut point)
-                        .unwrap();
-                    let nearest_node = self
-                        .kdtree
-                        .nearest_one::<SquaredEuclidean>(&[point.x(), point.y()]);
-                    let osm_nearest_node: &super::pbf::Node = self
-                        .nodes_to_match
-                        .get::<usize>(nearest_node.item as usize)
-                        .expect("Impossible, all nodes have to exist");
+                    let point_original = geo::Point::new(lng, lat);
                     if self
                         .filter_geometry
                         .as_ref()
-                        .is_some_and(|f| !f.contains(&point))
+                        .is_some_and(|f| !f.contains(&point_original))
                     {
                         skipped_nodes += 1;
                         None
                     } else {
+                        let mut point = geo::Point::new(lng, lat).to_radians();
+                        proj4rs::transform::transform(&self.proj_from, &self.proj_to, &mut point)
+                            .unwrap();
+                        let nearest_node = self
+                            .kdtree
+                            .nearest_one::<SquaredEuclidean>(&[point.x(), point.y()]);
+                        let osm_nearest_node: &super::pbf::Node = self
+                            .nodes_to_match
+                            .get::<usize>(nearest_node.item as usize)
+                            .expect("Impossible, all nodes have to exist");
                         match identify_type(&n) {
                             Some(v) => Some(Poi::new(
                                 n.id.0.try_into().unwrap(),
