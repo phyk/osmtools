@@ -308,10 +308,11 @@ mod tests {
             (3.22183, 51.20887),
             (3.22183, 51.20391),
         ];
-        let result = _load_osm_walking("Bruegge", bounding_box, "data", "test", false);
-        assert_eq!(result.0.shape(), (0, 0));
-        assert_eq!(result.1.shape(), (0, 0));
-        assert_eq!(result.2.shape(), (0, 0));
+        let (nodes, edges, mapping) =
+            _load_osm_walking("Bruegge", bounding_box, "data", "test", false);
+        assert_eq!(nodes.shape(), (1813, 3));
+        assert_eq!(edges.shape(), (4032, 3));
+        assert_eq!(mapping.shape(), (3, 2));
     }
 
     #[test]
@@ -323,10 +324,11 @@ mod tests {
             (3.22183, 51.20887),
             (3.22183, 51.20391),
         ];
-        let result = _load_osm_cycling("Bruegge", bounding_box, &false, "data", "test", false);
-        assert_eq!(result.0.shape(), (0, 0));
-        assert_eq!(result.1.shape(), (0, 0));
-        assert_eq!(result.2.shape(), (0, 0));
+        let (nodes, edges, mapping) =
+            _load_osm_cycling("Bruegge", bounding_box, &false, "data", "test", false);
+        assert_eq!(nodes.shape(), (1653, 3));
+        assert_eq!(edges.shape(), (3325, 3));
+        assert_eq!(mapping.shape(), (3, 2));
     }
 
     #[test]
@@ -338,10 +340,11 @@ mod tests {
             (3.22183, 51.20887),
             (3.22183, 51.20391),
         ];
-        let result = _load_osm_driving("Bruegge", bounding_box, "data", "test", false);
-        assert_eq!(result.0.shape(), (0, 0));
-        assert_eq!(result.1.shape(), (0, 0));
-        assert_eq!(result.2.shape(), (0, 0));
+        let (nodes, edges, mapping) =
+            _load_osm_driving("Bruegge", bounding_box, "data", "test", false);
+        assert_eq!(nodes.shape(), (470, 3));
+        assert_eq!(edges.shape(), (659, 3));
+        assert_eq!(mapping.shape(), (3, 2));
     }
 
     #[test]
@@ -362,6 +365,6 @@ mod tests {
             "test",
             false,
         );
-        assert_eq!(result.shape(), (0, 0));
+        assert_eq!(result.shape(), (215, 6));
     }
 }
