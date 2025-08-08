@@ -284,9 +284,6 @@ impl<Filter: EdgeFilter> Loader<Filter> {
             e.length = Distance_
                 .calc(source, dest, self.source_crs, self.target_crs)
                 .expect("Cannot calculate distance");
-            if e.length < 1.0 {
-                println!("{:?} - {:?} len {:?}", source, dest, e.length);
-            }
         }
     }
 
