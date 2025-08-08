@@ -5,7 +5,7 @@ use crate::pbfextractor::node_pbf::PoiLoaderBuilder;
 use crate::pbfextractor::pbf::{Loader, OsmLoaderBuilder, OsmNodeId};
 use crate::pbfextractor::units::Meters;
 use crate::struct_to_dataframe;
-use geo::{LineString, Polygon};
+use geo::{Contains, LineString, Point, Polygon};
 use h3o::{LatLng, Resolution};
 use log::info;
 use polars::frame::DataFrame;
@@ -123,11 +123,13 @@ pub fn _load_osm_pois(
 pub fn _load_osm_walking(
     city_name: &str,
     geometry_vec: Vec<(f64, f64)>,
+    geometry_vec_narrowed: Vec<(f64, f64)>,
     archive_path: &str,
     outpath: &str,
     download: bool,
 ) -> (DataFrame, DataFrame, DataFrame) {
     let bounding_box = Polygon::new(LineString::from(geometry_vec), vec![]);
+    let bounding_box_narrowed = Polygon::new(LineString::from(geometry_vec_narrowed), vec![]);
     let pbf_path = check_pbf_archives(city_name, archive_path, download)
         .expect("Download failed or Path not existing");
     let osm_loader: Loader<WalkingEdgeFilter> = OsmLoaderBuilder::default()
@@ -145,6 +147,7 @@ pub fn _load_osm_walking(
     // let graph = flate2::write::GzEncoder::new(graph, flate2::Compression::best());
     write_graph(
         &osm_loader,
+        &bounding_box_narrowed,
         &outpath_edges,
         &outpath_nodes,
         &outpath_mapping,
@@ -154,12 +157,14 @@ pub fn _load_osm_walking(
 pub fn _load_osm_cycling(
     city_name: &str,
     geometry_vec: Vec<(f64, f64)>,
+    geometry_vec_narrowed: Vec<(f64, f64)>,
     reverse_edges: &bool,
     archive_path: &str,
     outpath: &str,
     download: bool,
 ) -> (DataFrame, DataFrame, DataFrame) {
     let bounding_box = Polygon::new(LineString::from(geometry_vec), vec![]);
+    let bounding_box_narrowed = Polygon::new(LineString::from(geometry_vec_narrowed), vec![]);
     let pbf_path = check_pbf_archives(city_name, archive_path, download)
         .expect("Download failed or Path not existing");
     let osm_loader: Loader<BicycleEdgeFilter> = OsmLoaderBuilder::default()
@@ -176,6 +181,7 @@ pub fn _load_osm_cycling(
     // let graph = flate2::write::GzEncoder::new(graph, flate2::Compression::best());
     write_graph(
         &osm_loader,
+        &bounding_box_narrowed,
         &outpath_edges,
         &outpath_nodes,
         &outpath_mapping,
@@ -185,11 +191,13 @@ pub fn _load_osm_cycling(
 pub fn _load_osm_driving(
     city_name: &str,
     geometry_vec: Vec<(f64, f64)>,
+    geometry_vec_narrowed: Vec<(f64, f64)>,
     archive_path: &str,
     outpath: &str,
     download: bool,
 ) -> (DataFrame, DataFrame, DataFrame) {
     let bounding_box = Polygon::new(LineString::from(geometry_vec), vec![]);
+    let bounding_box_narrowed = Polygon::new(LineString::from(geometry_vec_narrowed), vec![]);
     let pbf_path = check_pbf_archives(city_name, archive_path, download)
         .expect("Download failed or Path not existing");
     let osm_loader: Loader<CarEdgeFilter> = OsmLoaderBuilder::default()
@@ -205,6 +213,7 @@ pub fn _load_osm_driving(
     // let graph = flate2::write::GzEncoder::new(graph, flate2::Compression::best());
     write_graph(
         &osm_loader,
+        &bounding_box_narrowed,
         &outpath_edges,
         &outpath_nodes,
         &outpath_mapping,
@@ -224,6 +233,7 @@ struct H3NodeMapping {
 
 fn write_graph<T: EdgeFilter>(
     l: &Loader<T>,
+    bounding_box: &Polygon<f64>,
     outpath_edges: &str,
     outpath_nodes: &str,
     outpath_mapping: &str,
@@ -251,6 +261,9 @@ fn write_graph<T: EdgeFilter>(
         let center_coord = LatLng::from(cell);
         let center_as_node =
             crate::pbfextractor::pbf::Node::new(0, center_coord.lat(), center_coord.lng());
+        if !bounding_box.contains(&Point::new(node.long, node.lat)) {
+            continue;
+        }
         let dist: Meters = Distance_
             .calc(&node, &center_as_node, l.source_crs, l.target_crs)
             .expect("should be a valid distance");
@@ -308,8 +321,14 @@ mod tests {
             (3.22183, 51.20887),
             (3.22183, 51.20391),
         ];
-        let (nodes, edges, mapping) =
-            _load_osm_walking("Bruegge", bounding_box, "data", "test", false);
+        let (nodes, edges, mapping) = _load_osm_walking(
+            "Bruegge",
+            bounding_box.clone(),
+            bounding_box.clone(),
+            "data",
+            "test",
+            false,
+        );
         assert_eq!(nodes.shape(), (1813, 3));
         assert_eq!(edges.shape(), (4032, 3));
         assert_eq!(mapping.shape(), (3, 2));
@@ -324,8 +343,15 @@ mod tests {
             (3.22183, 51.20887),
             (3.22183, 51.20391),
         ];
-        let (nodes, edges, mapping) =
-            _load_osm_cycling("Bruegge", bounding_box, &false, "data", "test", false);
+        let (nodes, edges, mapping) = _load_osm_cycling(
+            "Bruegge",
+            bounding_box.clone(),
+            bounding_box.clone(),
+            &false,
+            "data",
+            "test",
+            false,
+        );
         assert_eq!(nodes.shape(), (1653, 3));
         assert_eq!(edges.shape(), (3325, 3));
         assert_eq!(mapping.shape(), (3, 2));
@@ -340,8 +366,14 @@ mod tests {
             (3.22183, 51.20887),
             (3.22183, 51.20391),
         ];
-        let (nodes, edges, mapping) =
-            _load_osm_driving("Bruegge", bounding_box, "data", "test", false);
+        let (nodes, edges, mapping) = _load_osm_driving(
+            "Bruegge",
+            bounding_box.clone(),
+            bounding_box.clone(),
+            "data",
+            "test",
+            false,
+        );
         assert_eq!(nodes.shape(), (470, 3));
         assert_eq!(edges.shape(), (659, 3));
         assert_eq!(mapping.shape(), (3, 2));
