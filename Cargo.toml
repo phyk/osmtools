@@ -10,7 +10,6 @@ split-debuginfo = "unpacked"
 [dependencies]
 geo = "0.30"
 geo-types = "0.7.14"
-h3o = "0.8"
 kiddo = "5.0.3"
 log = "0.4.25"
 osmpbfreader = "0.19"
