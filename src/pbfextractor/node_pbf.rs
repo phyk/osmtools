@@ -10,6 +10,7 @@ use polars::prelude::DataFrame;
 use polars_io::SerReader;
 use proj4rs::Proj;
 use serde::Serialize;
+use smartstring::{LazyCompact, SmartString};
 use std::fs::File;
 use std::io::BufReader;
 use std::iter::zip;
@@ -190,41 +191,23 @@ impl PoiLoader {
 
         let mut skipped_nodes = 0;
 
-        let nodes: Vec<Poi> = reader
+        let mut nodes: Vec<Poi> = reader
             .par_iter()
             .filter_map(|obj| {
                 if let Ok(OsmObj::Node(n)) = obj {
-                    let lat = f64::from(n.decimicro_lat) / 10_000_000.0;
-                    let lng = f64::from(n.decimicro_lon) / 10_000_000.0;
-                    let point_original = geo::Point::new(lng, lat);
-                    if self
-                        .filter_geometry
-                        .as_ref()
-                        .is_some_and(|f| !f.contains(&point_original))
-                    {
-                        skipped_nodes += 1;
-                        None
-                    } else {
-                        let mut point = geo::Point::new(lng, lat).to_radians();
-                        proj4rs::transform::transform(&self.proj_from, &self.proj_to, &mut point)
-                            .unwrap();
-                        let nearest_node = self
-                            .kdtree
-                            .nearest_one::<SquaredEuclidean>(&[point.x(), point.y()]);
-                        let osm_nearest_node: &super::pbf::Node = self
-                            .nodes_to_match
-                            .get::<usize>(nearest_node.item as usize)
-                            .expect("Impossible, all nodes have to exist");
-                        match identify_type(&n) {
-                            Some(v) => Some(Poi::new(
-                                n.id.0.try_into().unwrap(),
-                                lat,
-                                lng,
-                                osm_nearest_node.osm_id,
-                                nearest_node.distance.sqrt(),
-                                v,
-                            )),
-                            None => None,
+                    let result = process_potential_poi(
+                        &n,
+                        &self.filter_geometry,
+                        &self.proj_from,
+                        &self.proj_to,
+                        &self.kdtree,
+                        &self.nodes_to_match,
+                    );
+                    match result {
+                        Some(poi) => Some(poi),
+                        None => {
+                            skipped_nodes += 1;
+                            None
                         }
                     }
                 } else {
@@ -233,10 +216,82 @@ impl PoiLoader {
             })
             .collect();
 
+        reader.rewind().expect("Can't rewind pbf file!");
+
+        let way_nodes: Vec<Poi> = reader
+            .get_objs_and_deps(|obj| {
+                obj.is_way()
+                    && PARKS_ATTRIBUTES.iter().any(|(k, v)| {
+                        if obj.tags().contains_key(*k) {
+                            let mut value = SmartString::<LazyCompact>::new();
+                            value.push_str(*v);
+                            obj.tags().get(*k) == Some(&value)
+                        } else {
+                            false
+                        }
+                    })
+            })
+            .unwrap()
+            .iter()
+            .filter_map(|(_, obj)| {
+                if let OsmObj::Node(node) = obj {
+                    process_potential_poi(
+                        node,
+                        &self.filter_geometry,
+                        &self.proj_from,
+                        &self.proj_to,
+                        &self.kdtree,
+                        &self.nodes_to_match,
+                    )
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        nodes.extend(way_nodes);
+
         debug!("Collected {} nodes", nodes.len());
         debug!("Calculating Metrics");
 
         nodes
+    }
+}
+
+fn process_potential_poi(
+    n: &osmpbfreader::Node,
+    filter_geometry: &Option<Polygon>,
+    proj_from: &proj4rs::Proj,
+    proj_to: &proj4rs::Proj,
+    kdtree: &ImmutableKdTree<f64, 2>,
+    nodes_to_match: &Vec<super::pbf::Node>,
+) -> Option<Poi> {
+    let lat = f64::from(n.decimicro_lat) / 10_000_000.0;
+    let lng = f64::from(n.decimicro_lon) / 10_000_000.0;
+    let point_original = geo::Point::new(lng, lat);
+    if filter_geometry
+        .as_ref()
+        .is_some_and(|f| !f.contains(&point_original))
+    {
+        None
+    } else {
+        let mut point = geo::Point::new(lng, lat).to_radians();
+        proj4rs::transform::transform(proj_from, proj_to, &mut point).unwrap();
+        let nearest_node = kdtree.nearest_one::<SquaredEuclidean>(&[point.x(), point.y()]);
+        let osm_nearest_node: &super::pbf::Node = nodes_to_match
+            .get::<usize>(nearest_node.item as usize)
+            .expect("Impossible, all nodes have to exist");
+        match identify_type(&n) {
+            Some(v) => Some(Poi::new(
+                n.id.0.try_into().unwrap(),
+                lat,
+                lng,
+                osm_nearest_node.osm_id,
+                nearest_node.distance.sqrt(),
+                v,
+            )),
+            None => None,
+        }
     }
 }
 
