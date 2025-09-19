@@ -202,6 +202,7 @@ impl PoiLoader {
                         &self.proj_to,
                         &self.kdtree,
                         &self.nodes_to_match,
+                        None,
                     );
                     match result {
                         Some(poi) => Some(poi),
@@ -242,6 +243,7 @@ impl PoiLoader {
                         &self.proj_to,
                         &self.kdtree,
                         &self.nodes_to_match,
+                        Some("Parks".into()),
                     )
                 } else {
                     None
@@ -265,6 +267,7 @@ fn process_potential_poi(
     proj_to: &proj4rs::Proj,
     kdtree: &ImmutableKdTree<f64, 2>,
     nodes_to_match: &Vec<super::pbf::Node>,
+    poi_type: Option<String>,
 ) -> Option<Poi> {
     let lat = f64::from(n.decimicro_lat) / 10_000_000.0;
     let lng = f64::from(n.decimicro_lon) / 10_000_000.0;
@@ -281,16 +284,27 @@ fn process_potential_poi(
         let osm_nearest_node: &super::pbf::Node = nodes_to_match
             .get::<usize>(nearest_node.item as usize)
             .expect("Impossible, all nodes have to exist");
-        match identify_type(&n) {
-            Some(v) => Some(Poi::new(
+        if let Some(poi_type_) = poi_type {
+            Some(Poi::new(
                 n.id.0.try_into().unwrap(),
                 lat,
                 lng,
                 osm_nearest_node.osm_id,
                 nearest_node.distance.sqrt(),
-                v,
-            )),
-            None => None,
+                poi_type_,
+            ))
+        } else {
+            match identify_type(&n) {
+                Some(v) => Some(Poi::new(
+                    n.id.0.try_into().unwrap(),
+                    lat,
+                    lng,
+                    osm_nearest_node.osm_id,
+                    nearest_node.distance.sqrt(),
+                    v,
+                )),
+                None => None,
+            }
         }
     }
 }
