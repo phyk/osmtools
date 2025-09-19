@@ -19,7 +19,6 @@ pub fn add_nearest_node_to_geo_df<'a>(
         .zip(nodes_to_match.column("long")?.f64()?.into_iter())
         .map(|(lat, long)| Point::new(long.unwrap(), lat.unwrap()).to_radians())
         .collect();
-    println!("Nodes: {:?}", nodes);
     nodes
         .iter_mut()
         .for_each(|p| proj4rs::transform::transform(&proj_from, &proj_to, p).unwrap());
@@ -33,7 +32,6 @@ pub fn add_nearest_node_to_geo_df<'a>(
         .map(|(lat, long)| {
             let mut point = Point::new(long.unwrap(), lat.unwrap()).to_radians();
             proj4rs::transform::transform(&proj_from, &proj_to, &mut point).unwrap();
-            println!("Point: {:?}", point);
             let nearest_node = kdtree.nearest_one::<SquaredEuclidean>(&[point.x(), point.y()]);
             let matched_nearest_node = nodes_to_match
                 .column("osm_id")
