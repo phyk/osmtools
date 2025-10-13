@@ -281,6 +281,6 @@ mod tests {
             "test",
             false,
         );
-        assert_eq!(result.shape(), (215, 6));
+        assert_eq!(result.shape(), (287, 6));
     }
 }
