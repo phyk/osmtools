@@ -11,7 +11,7 @@ use std::fs::File;
 use std::io::{self, BufWriter, Error, ErrorKind};
 use std::path::{Path, PathBuf};
 
-fn check_pbf_archives(
+pub(crate) fn check_pbf_archives(
     city_name: &str,
     archive_path: &str,
     download: bool,

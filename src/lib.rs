@@ -1,3 +1,4 @@
+pub mod boundary;
 pub mod extractor;
 pub mod pbfextractor;
 mod utils;
