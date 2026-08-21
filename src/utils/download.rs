@@ -6,7 +6,18 @@ use log::info;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-fn download_source(url: &String, filename: &String, target_dir: &String) -> Result<PathBuf> {
+pub enum ExistingFileMode {
+    Overwrite,
+    Reuse,
+    Error,
+}
+
+fn download_source(
+    url: &String,
+    filename: &String,
+    target_dir: &String,
+    mode: ExistingFileMode,
+) -> Result<PathBuf> {
     let path = Path::new(target_dir);
     if !path.exists() {
         info!("Creating directories for path {target_dir}");
@@ -18,10 +29,25 @@ fn download_source(url: &String, filename: &String, target_dir: &String) -> Resu
     let filepath_buf = path.join(Path::new(filename));
     let filepath = filepath_buf.as_path();
     if filepath.exists() {
-        info!("Deleting file {filename} because it already existed at the specified location");
-        match remove_file(filepath) {
-            Ok(_) => (),
-            Err(error) => panic!("Problem removing the existing pbf file: {error:?}"),
+        match mode {
+            ExistingFileMode::Reuse => {
+                info!("Reusing existing PBF at {}", filepath.display());
+                return Ok(filepath_buf);
+            }
+            ExistingFileMode::Overwrite => {
+                info!("Deleting file {filename} because it already existed at the specified location");
+                match remove_file(filepath) {
+                    Ok(_) => (),
+                    Err(error) => panic!("Problem removing the existing pbf file: {error:?}"),
+                }
+            }
+            ExistingFileMode::Error => {
+                return Err(format!(
+                    "File {} already exists; use Overwrite or Reuse mode",
+                    filepath.display()
+                )
+                .into());
+            }
         }
     }
     info!("Downloading file");
@@ -33,7 +59,11 @@ fn download_source(url: &String, filename: &String, target_dir: &String) -> Resu
     Ok(filepath_buf)
 }
 
-pub fn download(source_name: &String, target_dir: &String) -> Result<PathBuf> {
+pub fn download(
+    source_name: &String,
+    target_dir: &String,
+    mode: ExistingFileMode,
+) -> Result<PathBuf> {
     let (filename, url) = get_bbbike_source(source_name).expect("Not available at source BBBike");
-    download_source(&url, &filename, target_dir)
+    download_source(&url, &filename, target_dir, mode)
 }
